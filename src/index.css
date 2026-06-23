@@ -73,6 +73,14 @@ input[type='number']::-webkit-outer-spin-button {
   animation: fadeUp 0.4s ease forwards;
 }
 
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slideIn 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
