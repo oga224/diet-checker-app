@@ -5,13 +5,13 @@ function ProgressBar({ current, total }) {
   const pct = ((current + 1) / total) * 100
   return (
     <div className="relative">
-      <div className="w-full h-1 rounded-full" style={{ background: '#EDE8E0' }}>
+      <div className="w-full h-1 rounded-full" style={{ background: '#F5E8EC' }}>
         <div
           className="h-1 rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #C9A96E, #E8C98A)' }}
+          style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #C4778A, #E8A0B0)' }}
         />
       </div>
-      <p className="text-right text-[10px] mt-1.5" style={{ color: '#B0A99F' }}>
+      <p className="text-right text-[10px] mt-1.5" style={{ color: '#C4A8B0' }}>
         {current + 1} / {total}
       </p>
     </div>
@@ -19,9 +19,9 @@ function ProgressBar({ current, total }) {
 }
 
 export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
-  const q         = QUESTIONS[step]
-  const selected  = answers[q.id]
-  const [pending, setPending] = useState(null) // 選択済み（アニメーション中）
+  const q        = QUESTIONS[step]
+  const selected = answers[q.id]
+  const [pending, setPending] = useState(null)
   const [animKey, setAnimKey] = useState(0)
 
   useEffect(() => {
@@ -38,9 +38,9 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
   const lines = q.question.split('\n')
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#F5F2EE' }}>
+    <div className="min-h-screen flex flex-col" style={{ background: '#FFF8F9' }}>
       {/* ヘッダー */}
-      <div className="px-5 pt-5 pb-3" style={{ background: 'white', borderBottom: '1px solid #EDE8E0' }}>
+      <div className="px-5 pt-5 pb-3" style={{ background: 'white', borderBottom: '1px solid #F5E8EC' }}>
         <ProgressBar current={step} total={QUESTIONS.length} />
       </div>
 
@@ -51,7 +51,7 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
           <span className="text-2xl">{q.icon}</span>
           <span
             className="text-[10px] font-bold tracking-widest px-2.5 py-1 rounded-full"
-            style={{ background: '#FEF3DC', color: '#C9A96E', border: '1px solid #F0E4C8' }}
+            style={{ background: '#FFF0F4', color: '#C4778A', border: '1px solid #F5C8D5' }}
           >
             {q.category}
           </span>
@@ -63,7 +63,7 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
             <p
               key={i}
               className="font-medium leading-snug"
-              style={{ fontSize: '1.15rem', color: '#1C2951', lineHeight: 1.55 }}
+              style={{ fontSize: '1.15rem', color: '#2D1F2D', lineHeight: 1.55 }}
             >
               {line}
             </p>
@@ -71,7 +71,7 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
         </div>
 
         {/* ヒント */}
-        <p className="text-[11px] mb-6 leading-relaxed" style={{ color: '#B0A99F' }}>
+        <p className="text-[11px] mb-6 leading-relaxed" style={{ color: '#C4A8B0' }}>
           {q.hint}
         </p>
 
@@ -88,14 +88,14 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
                   paddingTop:    18,
                   paddingBottom: 18,
                   background: isSelected
-                    ? 'linear-gradient(135deg, #1C2951 0%, #2D3E6E 100%)'
+                    ? 'linear-gradient(135deg, #C4778A 0%, #D4889A 100%)'
                     : 'white',
                   border: isSelected
-                    ? '1.5px solid #1C2951'
-                    : '1.5px solid #EDE8E0',
+                    ? '1.5px solid #C4778A'
+                    : '1.5px solid #F5E8EC',
                   boxShadow: isSelected
-                    ? '0 4px 16px rgba(28,41,81,0.2)'
-                    : '0 1px 4px rgba(0,0,0,0.04)',
+                    ? '0 4px 16px rgba(196,119,138,0.25)'
+                    : '0 1px 4px rgba(196,119,138,0.06)',
                   cursor: pending !== null ? 'default' : 'pointer',
                 }}
               >
@@ -103,14 +103,14 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
                   <div>
                     <p
                       className="font-semibold text-sm"
-                      style={{ color: isSelected ? 'white' : '#1C2951' }}
+                      style={{ color: isSelected ? 'white' : '#2D1F2D' }}
                     >
                       {opt.label}
                     </p>
                     {opt.sub && (
                       <p
                         className="text-[11px] mt-0.5"
-                        style={{ color: isSelected ? 'rgba(255,255,255,0.6)' : '#B0A99F' }}
+                        style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : '#C4A8B0' }}
                       >
                         {opt.sub}
                       </p>
@@ -119,8 +119,8 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
                   <div
                     className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ml-3"
                     style={{
-                      borderColor: isSelected ? '#C9A96E' : '#DDD8D0',
-                      background:  isSelected ? '#C9A96E'  : 'transparent',
+                      borderColor: isSelected ? 'white' : '#F5C8D5',
+                      background:  isSelected ? 'rgba(255,255,255,0.3)' : 'transparent',
                     }}
                   >
                     {isSelected && (
@@ -141,7 +141,7 @@ export default function QuestionScreen({ step, answers, onAnswer, onBack }) {
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-xl transition-all duration-150 active:scale-[0.97]"
-          style={{ color: '#B0A99F', background: 'transparent' }}
+          style={{ color: '#C4A8B0', background: 'transparent' }}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />

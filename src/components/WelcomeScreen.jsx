@@ -2,37 +2,41 @@ export default function WelcomeScreen({ onStart }) {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-between px-6 py-10 relative overflow-hidden"
-      style={{ background: 'linear-gradient(160deg, #111B38 0%, #1C2951 50%, #172244 100%)' }}
+      style={{ background: 'linear-gradient(160deg, #FFF0F4 0%, #FFFFFF 55%, #FFF5F0 100%)' }}
     >
       {/* 装飾グロー */}
       <div className="absolute inset-0 pointer-events-none">
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(201,169,110,0.12) 0%, transparent 70%)', top: '-60px' }}
+          style={{ background: 'radial-gradient(circle, rgba(212,135,138,0.14) 0%, transparent 70%)', top: '-60px' }}
         />
         <div
           className="absolute bottom-0 right-0 w-64 h-64 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(196,137,123,0.08) 0%, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(232,160,176,0.12) 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-48 h-48 rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(212,135,138,0.08) 0%, transparent 70%)' }}
         />
       </div>
 
       {/* 上部 */}
       <div className="w-full flex flex-col items-center pt-4 relative animate-fade-up">
         <div className="flex items-center gap-3 mb-8">
-          <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, transparent, #C9A96E)' }} />
-          <p className="text-[10px] font-medium tracking-[0.3em]" style={{ color: '#C9A96E' }}>
+          <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, transparent, #C4778A)' }} />
+          <p className="text-[10px] font-medium tracking-[0.3em]" style={{ color: '#C4778A' }}>
             BODY & MONEY DIAGNOSIS
           </p>
-          <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, #C9A96E, transparent)' }} />
+          <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, #C4778A, transparent)' }} />
         </div>
 
-        <h1 className="font-serif text-white text-center leading-tight mb-3" style={{ fontSize: '2rem', fontWeight: 300, letterSpacing: '0.04em' }}>
+        <h1 className="font-serif text-center leading-tight mb-3" style={{ fontSize: '2rem', fontWeight: 300, letterSpacing: '0.04em', color: '#2D1F2D' }}>
           あなたの体と<br />お金の見える化診断
         </h1>
 
-        <div className="w-10 h-px mx-auto mb-6" style={{ background: 'linear-gradient(90deg, #C9A96E, #E8C98A, #C9A96E)' }} />
+        <div className="w-10 h-px mx-auto mb-6" style={{ background: 'linear-gradient(90deg, #E8A0B0, #F2C5D0, #E8A0B0)' }} />
 
-        <p className="text-center text-sm leading-relaxed mb-8" style={{ color: '#8A9BC0', maxWidth: 320 }}>
+        <p className="text-center text-sm leading-relaxed mb-8" style={{ color: '#9B7585', maxWidth: 320 }}>
           今の生活習慣が、体型とお金に<br />
           どんな影響を与えているかを<br />
           一緒に確認してみましょう。
@@ -49,9 +53,9 @@ export default function WelcomeScreen({ onStart }) {
               key={text}
               className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px]"
               style={{
-                background: 'rgba(255,255,255,0.06)',
-                border:     '1px solid rgba(201,169,110,0.25)',
-                color:      '#C4B89A',
+                background: 'rgba(255,255,255,0.8)',
+                border:     '1px solid rgba(196,119,138,0.3)',
+                color:      '#9B7585',
               }}
             >
               <span>{icon}</span>
@@ -66,13 +70,14 @@ export default function WelcomeScreen({ onStart }) {
         className="w-full rounded-2xl p-6 relative animate-fade-up"
         style={{
           maxWidth: 400,
-          background: 'rgba(255,255,255,0.05)',
-          border:     '1px solid rgba(201,169,110,0.2)',
+          background: 'rgba(255,255,255,0.85)',
+          border:     '1px solid rgba(196,119,138,0.2)',
+          boxShadow:  '0 4px 24px rgba(196,119,138,0.1)',
           backdropFilter: 'blur(8px)',
           animationDelay: '0.1s',
         }}
       >
-        <p className="text-[11px] font-bold tracking-widest mb-3" style={{ color: '#C9A96E' }}>
+        <p className="text-[11px] font-bold tracking-widest mb-3" style={{ color: '#C4778A' }}>
           この診断でわかること
         </p>
         {[
@@ -85,11 +90,11 @@ export default function WelcomeScreen({ onStart }) {
           <div key={i} className="flex items-start gap-2.5 mb-2">
             <div
               className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center mt-0.5"
-              style={{ background: 'rgba(201,169,110,0.2)', minWidth: 16 }}
+              style={{ background: 'rgba(196,119,138,0.15)', minWidth: 16 }}
             >
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#C9A96E' }} />
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#C4778A' }} />
             </div>
-            <p className="text-[12px] leading-snug" style={{ color: '#C4B89A' }}>{item}</p>
+            <p className="text-[12px] leading-snug" style={{ color: '#6B4A58' }}>{item}</p>
           </div>
         ))}
       </div>
@@ -100,14 +105,14 @@ export default function WelcomeScreen({ onStart }) {
           onClick={onStart}
           className="w-full py-5 rounded-2xl font-bold text-white text-sm tracking-widest transition-all duration-200 active:scale-[0.97]"
           style={{
-            background:  'linear-gradient(135deg, #C9A96E 0%, #E8C98A 50%, #C9A96E 100%)',
-            boxShadow:   '0 6px 24px rgba(201,169,110,0.45)',
+            background:    'linear-gradient(135deg, #C4778A 0%, #E8A0B0 50%, #C4778A 100%)',
+            boxShadow:     '0 6px 24px rgba(196,119,138,0.4)',
             letterSpacing: '0.1em',
           }}
         >
           診断をはじめる →
         </button>
-        <p className="text-[10px] text-center" style={{ color: '#4A5680' }}>
+        <p className="text-[10px] text-center" style={{ color: '#C4A8B0' }}>
           ※ この診断は医療診断ではありません。<br />
           体調・疾患については必ず医師にご相談ください。
         </p>
