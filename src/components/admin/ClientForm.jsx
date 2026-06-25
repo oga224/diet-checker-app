@@ -21,8 +21,18 @@ function Field({ label, required, children }) {
 const inputCls =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition'
 
-export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting }) {
-  const [form, setForm] = useState({ ...EMPTY_FORM, ...initial })
+/**
+ * Props:
+ *   initial     - 編集時の初期値（新規時は省略）
+ *   onSubmit    - 送信ハンドラ（payload を受け取る）
+ *   onCancel    - キャンセルハンドラ
+ *   submitting  - 送信中フラグ
+ *   showAuth    - true のとき メール・パスワード欄を表示（新規登録時のみ）
+ */
+export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting, showAuth = false }) {
+  const [form, setForm]           = useState({ ...EMPTY_FORM, ...initial })
+  const [email, setEmail]         = useState('')
+  const [password, setPassword]   = useState('')
   const [validationError, setValidationError] = useState('')
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -31,6 +41,14 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
     e.preventDefault()
     if (!form.name.trim()) {
       setValidationError('氏名は必須です')
+      return
+    }
+    if (showAuth && !email.trim()) {
+      setValidationError('メールアドレスは必須です')
+      return
+    }
+    if (showAuth && password.length < 6) {
+      setValidationError('パスワードは6文字以上で入力してください')
       return
     }
     setValidationError('')
@@ -45,6 +63,8 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
       height_cm:     form.height_cm     ? Number(form.height_cm)     : null,
       address:       form.address.trim() || null,
       contract_type: form.contract_type  || null,
+      // Auth 用フィールド（_ プレフィックスで DB カラムと区別）
+      ...(showAuth && { _email: email.trim(), _password: password }),
     }
     onSubmit(payload)
   }
@@ -57,6 +77,39 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
         </p>
       )}
 
+      {/* ── ログイン情報（新規登録のみ） ── */}
+      {showAuth && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 space-y-3">
+          <p className="text-xs font-bold text-blue-600 uppercase tracking-wide">ログイン情報（必須）</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="メールアドレス" required>
+              <input
+                className={inputCls}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="hanako@example.com"
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="初期パスワード（6文字以上）" required>
+              <input
+                className={inputCls}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-blue-400">
+            お客さんはこのメールアドレスとパスワードでスマホからログインします。
+          </p>
+        </div>
+      )}
+
+      {/* ── お客さん基本情報 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="氏名" required>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="山田 花子" />
@@ -99,18 +152,12 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
       </Field>
 
       <div className="flex justify-end gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-        >
+        <button type="button" onClick={onCancel}
+          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
           キャンセル
         </button>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="px-5 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        >
+        <button type="submit" disabled={submitting}
+          className="px-5 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
           {submitting ? '保存中…' : '保存する'}
         </button>
       </div>
