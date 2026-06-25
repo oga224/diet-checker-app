@@ -1,55 +1,84 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
-import { supabase } from '../../lib/supabase'
-import ClientForm from '../../components/admin/ClientForm'
-import { useAuth } from '../../contexts/AuthContext'
+import { format, differenceInDays, parseISO } from 'date-fns'
+import { supabase }  from '../../lib/supabase'
+import ClientForm    from '../../components/admin/ClientForm'
+import { useAuth }   from '../../contexts/AuthContext'
 import { evaluateLog, scoreColor, scoreLabel } from '../../lib/evaluateLog'
 
-const today = format(new Date(), 'yyyy-MM-dd')
+const todayStr = format(new Date(), 'yyyy-MM-dd')
 
-function ScoreBadge({ weightLog, mealLog }) {
-  if (!weightLog) {
+// ── 入力状況バッジ ────────────────────────────────────────────
+function EntryBadge({ clientId, todayLogs, weightHistory }) {
+  if (todayLogs[clientId]) {
     return (
-      <span className="text-xs text-gray-300 font-medium bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-full">
+      <span className="text-xs font-medium bg-green-50 text-green-600 border border-green-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+        今日入力済み
+      </span>
+    )
+  }
+  const hist = weightHistory[clientId]
+  if (!hist?.lastDate) {
+    return (
+      <span className="text-xs font-medium bg-gray-100 text-gray-400 border border-gray-200 px-2 py-0.5 rounded-full">
         未入力
       </span>
     )
   }
-  const { score } = evaluateLog(weightLog, null, mealLog)
-  const color     = scoreColor(score)
-  return (
-    <div className="text-right flex-shrink-0">
-      <p className="text-xs text-gray-400 mb-0.5">今日のスコア</p>
-      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${color.bg} ${color.text} ${color.border}`}>
-        {score}点 <span className="font-normal opacity-70">{scoreLabel(score)}</span>
+  const days = differenceInDays(parseISO(todayStr), parseISO(hist.lastDate))
+  if (days <= 1) {
+    return (
+      <span className="text-xs font-medium bg-blue-50 text-blue-500 border border-blue-200 px-2 py-0.5 rounded-full">
+        昨日入力
       </span>
-    </div>
+    )
+  }
+  return (
+    <span className={`text-xs font-medium border px-2 py-0.5 rounded-full whitespace-nowrap
+      ${days >= 3 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-orange-50 text-orange-500 border-orange-200'}`}>
+      {days}日未入力
+    </span>
   )
+}
+
+// ── 日数（ソート用） ─────────────────────────────────────────
+function entryDays(clientId, todayLogs, weightHistory) {
+  if (todayLogs[clientId]) return -1
+  const hist = weightHistory[clientId]
+  if (!hist?.lastDate) return 9999
+  return differenceInDays(parseISO(todayStr), parseISO(hist.lastDate))
 }
 
 export default function ClientListPage() {
   const { signOut } = useAuth()
-  const [clients, setClients]         = useState([])
-  const [todayLogs, setTodayLogs]     = useState({})   // client_id → weight_log
-  const [todayMeals, setTodayMeals]   = useState({})   // client_id → meal_log
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState(null)
-  const [showForm, setShowForm]       = useState(false)
-  const [submitting, setSubmitting]   = useState(false)
-  const [toast, setToast]             = useState(null)
+  const [clients,       setClients]       = useState([])
+  const [todayLogs,     setTodayLogs]     = useState({})
+  const [todayMeals,    setTodayMeals]    = useState({})
+  const [weightHistory, setWeightHistory] = useState({}) // client_id → { firstKg, latestKg, lastDate, latestLog }
+  const [commentCounts, setCommentCounts] = useState({}) // client_id → count
+  const [loading,       setLoading]       = useState(true)
+  const [error,         setError]         = useState(null)
+  const [showForm,      setShowForm]      = useState(false)
+  const [submitting,    setSubmitting]    = useState(false)
+  const [toast,         setToast]         = useState(null)
 
   async function fetchAll() {
-    const [clientsRes, logsRes, mealsRes] = await Promise.all([
+    const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
       supabase.from('clients').select('*').order('kana'),
-      supabase.from('weight_logs').select('*').eq('date', today),
+      supabase.from('weight_logs').select('*').eq('date', todayStr),
       supabase.from('meal_logs')
         .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
-        .eq('date', today),
+        .eq('date', todayStr),
+      // 全体重ログ：start/latest体重・最終入力日の算出に使用
+      supabase.from('weight_logs')
+        .select('client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
+        .order('date', { ascending: true }),
+      // お客さんからのコメント件数
+      supabase.from('admin_comments').select('client_id').eq('sender', 'client'),
     ])
 
-    if (clientsRes.error) { setError(clientsRes.error.message) }
-    else { setClients(clientsRes.data) }
+    if (clientsRes.error) setError(clientsRes.error.message)
+    else setClients(clientsRes.data)
 
     if (!logsRes.error && logsRes.data) {
       const map = {}
@@ -60,6 +89,25 @@ export default function ClientListPage() {
       const map = {}
       mealsRes.data.forEach((m) => { map[m.client_id] = m })
       setTodayMeals(map)
+    }
+    if (!wHistRes.error && wHistRes.data) {
+      const map = {}
+      wHistRes.data.forEach((l) => {
+        if (!map[l.client_id]) {
+          map[l.client_id] = { firstKg: null, latestKg: null, lastDate: null, latestLog: null }
+        }
+        const e = map[l.client_id]
+        if (l.morning_kg != null && !e.firstKg) e.firstKg = l.morning_kg
+        if (l.morning_kg != null) e.latestKg = l.morning_kg
+        e.lastDate  = l.date
+        e.latestLog = l
+      })
+      setWeightHistory(map)
+    }
+    if (!commentsRes.error && commentsRes.data) {
+      const map = {}
+      commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
+      setCommentCounts(map)
     }
     setLoading(false)
   }
@@ -75,35 +123,32 @@ export default function ClientListPage() {
     setSubmitting(true)
     const { error, data } = await supabase.from('clients').insert(payload).select().single()
     setSubmitting(false)
-    if (error) {
-      showToast('error', `登録に失敗しました：${error.message}`)
-    } else {
-      setShowForm(false)
-      showToast('success', `${data.name} さんを登録しました`)
-      fetchAll()
-    }
+    if (error) { showToast('error', `登録に失敗しました：${error.message}`) }
+    else { setShowForm(false); showToast('success', `${data.name} さんを登録しました`); fetchAll() }
   }
 
-  // プログラム中を上に、その中でスコア低い順→未入力優先
+  // ── ソート：未入力日数が多い順 → 今日入力済みはスコア低い順 → 終了者は末尾 ──
   const sorted = [...clients].sort((a, b) => {
     const aActive = a.is_active !== false
     const bActive = b.is_active !== false
-    if (aActive !== bActive) return aActive ? -1 : 1  // active 優先
+    if (aActive !== bActive) return aActive ? -1 : 1
     if (!aActive) return (a.kana || a.name).localeCompare(b.kana || b.name, 'ja')
-    const la = todayLogs[a.id]; const lb = todayLogs[b.id]
-    if (!la && !lb) return 0
-    if (!la) return -1
-    if (!lb) return 1
-    return evaluateLog(la, null, todayMeals[a.id]).score
-         - evaluateLog(lb, null, todayMeals[b.id]).score
+    const aDays = entryDays(a.id, todayLogs, weightHistory)
+    const bDays = entryDays(b.id, todayLogs, weightHistory)
+    if (aDays !== bDays) return bDays - aDays // 日数多い順
+    if (aDays === -1) { // 両方today入力済み → スコア低い順
+      const sa = evaluateLog(todayLogs[a.id], null, todayMeals[a.id]).score
+      const sb = evaluateLog(todayLogs[b.id], null, todayMeals[b.id]).score
+      return sa - sb
+    }
+    return 0
   })
 
-  const inputtedCount   = clients.filter((c) => todayLogs[c.id]).length
-  const notInputted     = clients.length - inputtedCount
+  const inputtedCount = clients.filter((c) => todayLogs[c.id]).length
+  const notInputted   = clients.length - inputtedCount
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* トースト */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium
           ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
@@ -117,34 +162,25 @@ export default function ClientListPage() {
           <p className="text-sm text-gray-500 mt-0.5">整骨院体重管理システム</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowForm(true)}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
+          <button onClick={() => setShowForm(true)}
+            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             ＋ 新規登録
           </button>
           <Link to="/" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
             ← チェッカー
           </Link>
-          <button
-            onClick={signOut}
-            className="text-sm text-gray-400 hover:text-red-500 transition-colors px-3 py-1.5 border border-gray-200 rounded-lg hover:border-red-200"
-          >
+          <button onClick={signOut}
+            className="text-sm text-gray-400 hover:text-red-500 transition-colors px-3 py-1.5 border border-gray-200 rounded-lg hover:border-red-200">
             ログアウト
           </button>
         </div>
       </header>
 
-      {/* 新規登録モーダル */}
       {showForm && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-5">お客さん新規登録</h2>
-            <ClientForm
-              onSubmit={handleCreate}
-              onCancel={() => setShowForm(false)}
-              submitting={submitting}
-            />
+            <ClientForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} submitting={submitting} />
           </div>
         </div>
       )}
@@ -163,14 +199,13 @@ export default function ClientListPage() {
         ) : clients.length === 0 ? (
           <div className="text-center py-20 text-gray-400">
             <p className="text-lg">お客さんが登録されていません</p>
-            <p className="text-sm mt-1">「＋ 新規登録」ボタンから追加してください</p>
           </div>
         ) : (
           <>
-            {/* 今日のサマリーバー */}
-            <div className="flex items-center gap-4 mb-4 px-1">
+            {/* サマリーバー */}
+            <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
               <p className="text-sm text-gray-500">
-                今日（{format(new Date(), 'M月d日')}）の入力状況：
+                今日（{format(new Date(), 'M月d日')}）の入力：
                 <span className="font-bold text-blue-600 ml-1">{inputtedCount}人</span>
                 <span className="text-gray-400"> / {clients.length}人入力済</span>
               </p>
@@ -183,38 +218,82 @@ export default function ClientListPage() {
 
             <div className="grid gap-3">
               {sorted.map((c) => {
-                const wLog = todayLogs[c.id]  ?? null
-                const mLog = todayMeals[c.id] ?? null
+                const wLog    = todayLogs[c.id]     ?? null
+                const mLog    = todayMeals[c.id]    ?? null
+                const hist    = weightHistory[c.id] ?? null
+                const commCnt = commentCounts[c.id] ?? 0
+
+                // 最新スコア：今日のログがあればそれを使用、なければ最新ログ
+                const scoreLog  = wLog ?? hist?.latestLog ?? null
+                const scoreMeal = wLog ? mLog : null
+                const scoreVal  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal).score : null
+                const scoreClr  = scoreVal !== null ? scoreColor(scoreVal) : null
+
+                // 進捗
+                const firstKg   = hist?.firstKg  ?? null
+                const latestKg  = wLog?.morning_kg ?? hist?.latestKg ?? null
+                const totalDiff = firstKg && latestKg ? +(latestKg - firstKg).toFixed(1) : null
+                const toGoal    = c.goal_weight && latestKg ? +(latestKg - c.goal_weight).toFixed(1) : null
+
                 return (
                   <Link
                     key={c.id}
                     to={`/admin/clients/${c.id}`}
-                    className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center justify-between hover:border-blue-300 hover:shadow-sm transition-all"
+                    className="bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-blue-300 hover:shadow-sm transition-all"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
-                        {c.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800 flex items-center gap-1.5">
-                          {c.is_active !== false && (
-                            <span className="text-red-500 text-xs leading-none">●</span>
-                          )}
-                          {c.name}
-                        </p>
-                        {c.kana && <p className="text-xs text-gray-400">{c.kana}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <ScoreBadge weightLog={wLog} mealLog={mLog} />
-                      {c.goal_weight && (
-                        <div className="text-right hidden sm:block">
-                          <p className="text-xs text-gray-400">目標体重</p>
-                          <p className="text-sm font-medium text-gray-700">{c.goal_weight} kg</p>
+                    {/* 上段：名前 + バッジ群 */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
+                          {c.name.charAt(0)}
                         </div>
-                      )}
-                      <span className="text-gray-300 text-lg">›</span>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-800 flex items-center gap-1.5 text-sm">
+                            {c.is_active !== false && <span className="text-red-500 text-xs">●</span>}
+                            {c.name}
+                          </p>
+                          {c.kana && <p className="text-xs text-gray-400">{c.kana}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* コメントバッジ */}
+                        {commCnt > 0 && (
+                          <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
+                            コメント {commCnt}件
+                          </span>
+                        )}
+                        {/* 入力状況バッジ */}
+                        <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
+                        {/* スコアバッジ */}
+                        {scoreVal !== null && (
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
+                            {scoreVal}点 {scoreLabel(scoreVal)}
+                          </span>
+                        )}
+                        <span className="text-gray-300 text-base">›</span>
+                      </div>
                     </div>
+
+                    {/* 下段：進捗サマリー */}
+                    {(firstKg || latestKg || c.goal_weight) && (
+                      <div className="flex items-center gap-3 text-xs text-gray-500 ml-11 flex-wrap">
+                        {firstKg   && <span>開始 <span className="font-medium text-gray-700">{firstKg}kg</span></span>}
+                        {latestKg  && <span>最新 <span className="font-medium text-gray-700">{latestKg}kg</span></span>}
+                        {totalDiff !== null && (
+                          <span className={`font-bold ${totalDiff < 0 ? 'text-green-600' : totalDiff > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {totalDiff >= 0 ? '+' : ''}{totalDiff}kg
+                          </span>
+                        )}
+                        {toGoal !== null && (
+                          <span>
+                            目標まで{' '}
+                            <span className={`font-medium ${toGoal <= 0 ? 'text-green-600' : 'text-gray-700'}`}>
+                              {toGoal <= 0 ? '達成！' : `-${toGoal}kg`}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </Link>
                 )
               })}

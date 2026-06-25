@@ -32,10 +32,10 @@ const ROWS_HEALTH = [
     cell: (w) => {
       if (!w?.morning_kg || !w?.evening_kg) return { v: '', c: '' }
       const d = +(w.evening_kg - w.morning_kg).toFixed(1)
-      return {
-        v: `${d >= 0 ? '+' : ''}${d}`,
-        c: d >= 0.6 ? 'text-red-500 font-bold' : 'text-gray-700',
-      }
+      const c = d >= 0.6  ? 'text-red-500 font-bold'
+              : d <= 0    ? 'text-green-600 font-bold'
+              : 'text-gray-700'
+      return { v: `${d >= 0 ? '+' : ''}${d}`, c }
     },
   },
   {
@@ -141,8 +141,9 @@ const ROWS_MEAL = [
     cell: (w, m) => {
       if (!w) return { v: '', c: '' }
       const { score } = evaluateLog(w, null, m)
-      const c = score >= 70 ? 'text-blue-700 font-bold'
-              : score >= 55 ? 'text-yellow-600 font-bold'
+      const c = score >= 90 ? 'text-blue-600 font-bold'
+              : score >= 80 ? 'text-green-600 font-bold'
+              : score >= 70 ? 'text-orange-500 font-bold'
               : 'text-red-500 font-bold'
       return { v: String(score), c }
     },
@@ -169,11 +170,15 @@ function Table({ rows, days, wMap, mMap, year, month, todayStr }) {
               const hasDat  = !!wMap[dateStr]
               return (
                 <th key={d}
-                  className={`text-center px-1 py-1.5 border-b border-gray-200 min-w-[2.8rem]
-                    ${isToday  ? 'bg-blue-50 border-b-2 border-b-blue-400' : hasDat ? 'bg-gray-50/60' : ''}
-                    ${isWE ? 'text-red-400' : 'text-gray-400'}`}>
+                  className={`text-center px-1 py-1.5 border-b min-w-[2.8rem]
+                    ${isToday
+                      ? 'bg-yellow-200 border-b-2 border-b-yellow-500 text-yellow-800 font-bold'
+                      : hasDat
+                        ? 'bg-gray-50/60 border-b border-gray-200'
+                        : 'border-b border-gray-200'}
+                    ${!isToday && isWE ? 'text-red-400' : !isToday ? 'text-gray-400' : ''}`}>
                   <div className="font-medium">{d}</div>
-                  <div className="text-gray-300">{dow}</div>
+                  <div className={isToday ? 'text-yellow-600' : 'text-gray-300'}>{dow}</div>
                 </th>
               )
             })}
@@ -194,7 +199,7 @@ function Table({ rows, days, wMap, mMap, year, month, todayStr }) {
                 return (
                   <td key={d}
                     className={`text-center px-1 py-2 border-b border-gray-100 ${c}
-                      ${isToday ? 'bg-blue-50/50' : ''}`}>
+                      ${isToday ? 'bg-yellow-50' : ''}`}>
                     {v}
                   </td>
                 )
