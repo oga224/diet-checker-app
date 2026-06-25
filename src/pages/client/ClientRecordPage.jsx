@@ -11,6 +11,7 @@ const EMPTY = {
   water_ml: '', toilet_count: '', sleep_hours: '',
   bowel_movement: null, menstruation: null,
   ate_breakfast: null, ate_lunch: null, ate_dinner: null, ate_snack: null,
+  ate_out_breakfast: false, ate_out_lunch: false, ate_out_dinner: false,
   comment: '',
 }
 
@@ -27,7 +28,7 @@ function WeightInput({ label, field, value, onChange, color }) {
           type="number" step="0.1" min="20" max="300"
           value={value}
           onChange={(e) => onChange(field, e.target.value)}
-          placeholder="00.0"
+          placeholder="--.-"
           className="w-full text-4xl font-bold text-center bg-white rounded-xl border-2 border-gray-200 focus:border-blue-400 outline-none py-4 text-gray-800"
         />
         <span className="text-xl font-bold text-gray-500 flex-shrink-0">kg</span>
@@ -120,8 +121,11 @@ export default function ClientRecordPage() {
           ate_breakfast:  d.ate_breakfast ?? null,
           ate_lunch:      d.ate_lunch     ?? null,
           ate_dinner:     d.ate_dinner    ?? null,
-          ate_snack:      d.ate_snack     ?? null,
-          comment:        d.comment       ?? '',
+          ate_snack:          d.ate_snack          ?? null,
+          ate_out_breakfast:  d.ate_out_breakfast  ?? false,
+          ate_out_lunch:      d.ate_out_lunch      ?? false,
+          ate_out_dinner:     d.ate_out_dinner     ?? false,
+          comment:            d.comment            ?? '',
         })
       }
       if (!mealRes.error && mealRes.data) {
@@ -164,8 +168,11 @@ export default function ClientRecordPage() {
       ate_breakfast:  form.ate_breakfast,
       ate_lunch:      form.ate_lunch,
       ate_dinner:     form.ate_dinner,
-      ate_snack:      form.ate_snack,
-      comment:        form.comment.trim() || null,
+      ate_snack:          form.ate_snack,
+      ate_out_breakfast:  form.ate_out_breakfast,
+      ate_out_lunch:      form.ate_out_lunch,
+      ate_out_dinner:     form.ate_out_dinner,
+      comment:            form.comment.trim() || null,
     }
 
     const mealPayload = {
@@ -317,6 +324,31 @@ export default function ClientRecordPage() {
             onUploaded={(url) => setPhoto('snack', url)}
             onDeleted={() => setPhoto('snack', null)}
           />
+        </div>
+
+        {/* 外食記録 */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-base font-bold text-gray-700 mb-1">🍽️ 外食の記録</p>
+          <p className="text-sm text-gray-400 mb-3">外食した食事を選んでください（複数可）</p>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { field: 'ate_out_breakfast', label: '朝食 (M)' },
+              { field: 'ate_out_lunch',     label: '昼食 (L)' },
+              { field: 'ate_out_dinner',    label: '夕食 (D)' },
+            ].map(({ field, label }) => (
+              <button
+                key={field}
+                type="button"
+                onClick={() => set(field, !form[field])}
+                className={`py-4 rounded-xl text-base font-bold border-2 transition-all active:scale-95
+                  ${form[field]
+                    ? 'bg-orange-500 text-white border-orange-500'
+                    : 'bg-white text-gray-400 border-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* コメント */}

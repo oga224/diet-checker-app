@@ -143,7 +143,7 @@ export default function BodyPhotoSection({ clientId, showToast }) {
   const [loading, setLoading]           = useState(true)
   const [saving, setSaving]             = useState(false)
   const [deleting, setDeleting]         = useState(false)
-  const [tab, setTab]                   = useState('upload') // 'upload' | 'compare'
+  const [tab, setTab]                   = useState('compare') // 'upload' | 'compare'
   const [lightbox, setLightbox]         = useState(null)     // { url, label }
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 

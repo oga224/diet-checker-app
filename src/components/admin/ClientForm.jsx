@@ -1,10 +1,8 @@
 import { useState } from 'react'
 
-const CONTRACT_TYPES = ['月額', '回数券', '単発', 'その他']
-
 const EMPTY_FORM = {
   name: '', kana: '', phone: '', goal_weight: '',
-  memo: '', age: '', height_cm: '', address: '', contract_type: '',
+  memo: '', age: '', height_cm: '', address: '', is_active: true,
 }
 
 function Field({ label, required, children }) {
@@ -21,18 +19,8 @@ function Field({ label, required, children }) {
 const inputCls =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition'
 
-/**
- * Props:
- *   initial     - 編集時の初期値（新規時は省略）
- *   onSubmit    - 送信ハンドラ（payload を受け取る）
- *   onCancel    - キャンセルハンドラ
- *   submitting  - 送信中フラグ
- *   showAuth    - true のとき メール・パスワード欄を表示（新規登録時のみ）
- */
-export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting, showAuth = false }) {
-  const [form, setForm]           = useState({ ...EMPTY_FORM, ...initial })
-  const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
+export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting }) {
+  const [form, setForm] = useState({ ...EMPTY_FORM, ...initial })
   const [validationError, setValidationError] = useState('')
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -43,30 +31,19 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
       setValidationError('氏名は必須です')
       return
     }
-    if (showAuth && !email.trim()) {
-      setValidationError('メールアドレスは必須です')
-      return
-    }
-    if (showAuth && password.length < 6) {
-      setValidationError('パスワードは6文字以上で入力してください')
-      return
-    }
     setValidationError('')
 
-    const payload = {
-      name:          form.name.trim(),
-      kana:          form.kana.trim()    || null,
-      phone:         form.phone.trim()   || null,
-      goal_weight:   form.goal_weight    ? Number(form.goal_weight)  : null,
-      memo:          form.memo.trim()    || null,
-      age:           form.age           ? Number(form.age)           : null,
-      height_cm:     form.height_cm     ? Number(form.height_cm)     : null,
-      address:       form.address.trim() || null,
-      contract_type: form.contract_type  || null,
-      // Auth 用フィールド（_ プレフィックスで DB カラムと区別）
-      ...(showAuth && { _email: email.trim(), _password: password }),
-    }
-    onSubmit(payload)
+    onSubmit({
+      name:        form.name.trim(),
+      kana:        form.kana.trim()    || null,
+      phone:       form.phone.trim()   || null,
+      goal_weight: form.goal_weight    ? Number(form.goal_weight) : null,
+      memo:        form.memo.trim()    || null,
+      age:         form.age           ? Number(form.age)          : null,
+      height_cm:   form.height_cm     ? Number(form.height_cm)    : null,
+      address:     form.address.trim() || null,
+      is_active:   form.is_active,
+    })
   }
 
   return (
@@ -77,39 +54,28 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
         </p>
       )}
 
-      {/* ── ログイン情報（新規登録のみ） ── */}
-      {showAuth && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 space-y-3">
-          <p className="text-xs font-bold text-blue-600 uppercase tracking-wide">ログイン情報（必須）</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="メールアドレス" required>
-              <input
-                className={inputCls}
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="hanako@example.com"
-                autoComplete="off"
-              />
-            </Field>
-            <Field label="初期パスワード（6文字以上）" required>
-              <input
-                className={inputCls}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-              />
-            </Field>
-          </div>
-          <p className="text-xs text-blue-400">
-            お客さんはこのメールアドレスとパスワードでスマホからログインします。
-          </p>
+      {/* ステータス */}
+      <Field label="ステータス">
+        <div className="flex gap-2">
+          {[
+            { v: true,  label: 'プログラム中', active: 'bg-blue-600 text-white' },
+            { v: false, label: '終了',          active: 'bg-gray-500 text-white' },
+          ].map(({ v, label, active }) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, is_active: v }))}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors
+                ${form.is_active === v
+                  ? active
+                  : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'}`}
+            >
+              {v && <span className="text-red-400 mr-1">●</span>}{label}
+            </button>
+          ))}
         </div>
-      )}
+      </Field>
 
-      {/* ── お客さん基本情報 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="氏名" required>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="山田 花子" />
@@ -119,12 +85,6 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
         </Field>
         <Field label="電話番号">
           <input className={inputCls} value={form.phone} onChange={set('phone')} placeholder="090-0000-0000" type="tel" />
-        </Field>
-        <Field label="契約タイプ">
-          <select className={inputCls} value={form.contract_type} onChange={set('contract_type')}>
-            <option value="">選択してください</option>
-            {CONTRACT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
         </Field>
         <Field label="年齢">
           <input className={inputCls} value={form.age} onChange={set('age')} placeholder="35" type="number" min="0" max="120" />
@@ -144,10 +104,8 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
       <Field label="目的・悩み">
         <textarea
           className={`${inputCls} resize-none`}
-          value={form.memo}
-          onChange={set('memo')}
-          rows={3}
-          placeholder="腰痛改善、産後ダイエットなど"
+          value={form.memo} onChange={set('memo')}
+          rows={3} placeholder="腰痛改善、産後ダイエットなど"
         />
       </Field>
 

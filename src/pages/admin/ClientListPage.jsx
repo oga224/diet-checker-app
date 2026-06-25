@@ -84,16 +84,18 @@ export default function ClientListPage() {
     }
   }
 
-  // 未入力のお客さんを上に表示し、スコアの低い順にソート
+  // プログラム中を上に、その中でスコア低い順→未入力優先
   const sorted = [...clients].sort((a, b) => {
-    const la = todayLogs[a.id]
-    const lb = todayLogs[b.id]
+    const aActive = a.is_active !== false
+    const bActive = b.is_active !== false
+    if (aActive !== bActive) return aActive ? -1 : 1  // active 優先
+    if (!aActive) return (a.kana || a.name).localeCompare(b.kana || b.name, 'ja')
+    const la = todayLogs[a.id]; const lb = todayLogs[b.id]
     if (!la && !lb) return 0
     if (!la) return -1
     if (!lb) return 1
-    const sa = evaluateLog(la, null, todayMeals[a.id]).score
-    const sb = evaluateLog(lb, null, todayMeals[b.id]).score
-    return sa - sb
+    return evaluateLog(la, null, todayMeals[a.id]).score
+         - evaluateLog(lb, null, todayMeals[b.id]).score
   })
 
   const inputtedCount   = clients.filter((c) => todayLogs[c.id]).length
@@ -194,7 +196,12 @@ export default function ClientListPage() {
                         {c.name.charAt(0)}
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-800">{c.name}</p>
+                        <p className="font-semibold text-gray-800 flex items-center gap-1.5">
+                          {c.is_active !== false && (
+                            <span className="text-red-500 text-xs leading-none">●</span>
+                          )}
+                          {c.name}
+                        </p>
                         {c.kana && <p className="text-xs text-gray-400">{c.kana}</p>}
                       </div>
                     </div>

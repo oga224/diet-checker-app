@@ -121,15 +121,15 @@ export default function ClientDetailPage() {
 
   // 編集フォーム初期値
   const editInitial = {
-    name:          client.name         ?? '',
-    kana:          client.kana         ?? '',
-    phone:         client.phone        ?? '',
-    goal_weight:   client.goal_weight  != null ? String(client.goal_weight)  : '',
-    memo:          client.memo         ?? '',
-    age:           client.age          != null ? String(client.age)          : '',
-    height_cm:     client.height_cm    != null ? String(client.height_cm)    : '',
-    address:       client.address      ?? '',
-    contract_type: client.contract_type ?? '',
+    name:        client.name        ?? '',
+    kana:        client.kana        ?? '',
+    phone:       client.phone       ?? '',
+    goal_weight: client.goal_weight != null ? String(client.goal_weight) : '',
+    memo:        client.memo        ?? '',
+    age:         client.age         != null ? String(client.age)         : '',
+    height_cm:   client.height_cm   != null ? String(client.height_cm)  : '',
+    address:     client.address     ?? '',
+    is_active:   client.is_active   ?? true,
   }
 
   return (
@@ -206,14 +206,18 @@ export default function ClientDetailPage() {
             1. 基本情報
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">基本情報</h2>
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">基本情報</h2>
+            {client.is_active !== false
+              ? <span className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <span>●</span> プログラム中
+                </span>
+              : <span className="text-xs font-bold text-gray-400 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+                  終了
+                </span>
+            }
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-            {client.contract_type && (
-              <div>
-                <p className="text-xs text-gray-400">契約タイプ</p>
-                <p className="font-medium text-gray-700">{client.contract_type}</p>
-              </div>
-            )}
             {client.age != null && (
               <div>
                 <p className="text-xs text-gray-400">年齢</p>
@@ -251,24 +255,26 @@ export default function ClientDetailPage() {
           {client.memo && (
             <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3">{client.memo}</p>
           )}
-
-          {/* 今日の健康スコア */}
-          <div className="mt-5 pt-5 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              今日の健康スコア（{todayStr}）
-            </p>
-            {todayLog ? (
-              <EvaluationCard log={todayLog} mealLog={todayMeal} admin />
-            ) : (
-              <div className="rounded-xl bg-gray-50 border border-gray-200 px-5 py-4 text-sm text-gray-400 text-center">
-                本日の記録はまだありません
-              </div>
-            )}
-          </div>
         </section>
 
         {/* ══════════════════════════════════════════════
-            2. 体重グラフ
+            2. 健康スコア
+        ══════════════════════════════════════════════ */}
+        <section>
+          <p className="text-xs text-gray-400 font-medium mb-2 px-1">
+            今日の健康スコア（{todayStr}）
+          </p>
+          {todayLog ? (
+            <EvaluationCard log={todayLog} mealLog={todayMeal} admin />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 text-sm text-gray-400 text-center">
+              本日の記録はまだありません
+            </div>
+          )}
+        </section>
+
+        {/* ══════════════════════════════════════════════
+            3. 体重グラフ
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
           <div className="flex items-center justify-between mb-4">
@@ -312,16 +318,6 @@ export default function ClientDetailPage() {
         <MonthlyTable clientId={id} />
 
         {/* ══════════════════════════════════════════════
-            4. 食事写真
-        ══════════════════════════════════════════════ */}
-        <MealPhotoSection clientId={id} />
-
-        {/* ══════════════════════════════════════════════
-            5. 体型写真
-        ══════════════════════════════════════════════ */}
-        <BodyPhotoSection clientId={id} showToast={showToast} />
-
-        {/* ══════════════════════════════════════════════
             6. コメント
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
@@ -335,6 +331,16 @@ export default function ClientDetailPage() {
           </div>
           <CommentSection clientId={id} showToast={showToast} />
         </section>
+
+        {/* ══════════════════════════════════════════════
+            7. 食事写真
+        ══════════════════════════════════════════════ */}
+        <MealPhotoSection clientId={id} />
+
+        {/* ══════════════════════════════════════════════
+            8. 体型写真
+        ══════════════════════════════════════════════ */}
+        <BodyPhotoSection clientId={id} showToast={showToast} />
 
       </main>
     </div>
