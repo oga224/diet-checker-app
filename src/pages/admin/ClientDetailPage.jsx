@@ -62,6 +62,9 @@ export default function ClientDetailPage() {
 
   useEffect(() => { fetchData() }, [id])
 
+  // 詳細画面を開いたとき必ずページ最上部から表示
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }) }, [])
+
   function showToast(type, msg) {
     setToast({ type, msg })
     setTimeout(() => setToast(null), 3500)
