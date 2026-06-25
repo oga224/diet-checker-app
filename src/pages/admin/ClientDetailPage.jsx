@@ -12,8 +12,7 @@ import MealPhotoSection from '../../components/admin/MealPhotoSection'
 import MonthlyTable     from '../../components/admin/MonthlyTable'
 import CommentSection, { useClientCommentCount } from '../../components/admin/CommentSection'
 import EvaluationCard   from '../../components/EvaluationCard'
-import { useAuth }        from '../../contexts/AuthContext'
-import { supabaseAdmin }  from '../../lib/supabaseAdmin'
+import { useAuth }      from '../../contexts/AuthContext'
 
 const PERIODS = [
   { key: '1w',  label: '1週間',  days: 7   },
@@ -78,19 +77,6 @@ export default function ClientDetailPage() {
 
   async function handleDelete() {
     setSubmitting(true)
-
-    // 紐づいている Auth User を取得して削除
-    if (supabaseAdmin) {
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('client_id', id)
-        .maybeSingle()
-      if (profile?.id) {
-        await supabaseAdmin.auth.admin.deleteUser(profile.id)
-      }
-    }
-
     const { error } = await supabase.from('clients').delete().eq('id', id)
     setSubmitting(false)
     if (error) { showToast('error', `削除に失敗しました：${error.message}`); setShowDelete(false) }

@@ -5,7 +5,6 @@ import { supabase } from '../../lib/supabase'
 import ClientForm from '../../components/admin/ClientForm'
 import { useAuth } from '../../contexts/AuthContext'
 import { evaluateLog, scoreColor, scoreLabel } from '../../lib/evaluateLog'
-import { supabaseAdmin } from '../../lib/supabaseAdmin'
 
 const today = format(new Date(), 'yyyy-MM-dd')
 
@@ -73,57 +72,16 @@ export default function ClientListPage() {
   }
 
   async function handleCreate(payload) {
-    const { _email, _password, ...clientData } = payload
     setSubmitting(true)
-
-    // ── Step 1: Supabase Auth にユーザーを作成 ──────────────
-    if (!supabaseAdmin) {
-      showToast('error', 'VITE_SUPABASE_SERVICE_ROLE_KEY が設定されていません')
-      setSubmitting(false)
-      return
-    }
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email:          _email,
-      password:       _password,
-      email_confirm:  true, // メール確認なしで即ログイン可能
-    })
-    if (authError) {
-      showToast('error', `ユーザー作成失敗：${authError.message}`)
-      setSubmitting(false)
-      return
-    }
-    const authUid = authData.user.id
-
-    // ── Step 2: clients テーブルに登録 ──────────────────────
-    const { data: clientRecord, error: clientError } = await supabase
-      .from('clients')
-      .insert(clientData)
-      .select()
-      .single()
-    if (clientError) {
-      await supabaseAdmin.auth.admin.deleteUser(authUid) // ロールバック
-      showToast('error', `お客さん登録失敗：${clientError.message}`)
-      setSubmitting(false)
-      return
-    }
-
-    // ── Step 3: profiles に auth.uid ↔ client_id を紐付け ──
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert({ id: authUid, role: 'client', client_id: clientRecord.id })
-    if (profileError) {
-      // ロールバック
-      await supabaseAdmin.auth.admin.deleteUser(authUid)
-      await supabase.from('clients').delete().eq('id', clientRecord.id)
-      showToast('error', `プロフィール登録失敗：${profileError.message}`)
-      setSubmitting(false)
-      return
-    }
-
+    const { error, data } = await supabase.from('clients').insert(payload).select().single()
     setSubmitting(false)
-    setShowForm(false)
-    showToast('success', `${clientRecord.name} さんを登録しました（メール：${_email}）`)
-    fetchAll()
+    if (error) {
+      showToast('error', `登録に失敗しました：${error.message}`)
+    } else {
+      setShowForm(false)
+      showToast('success', `${data.name} さんを登録しました`)
+      fetchAll()
+    }
   }
 
   // 未入力のお客さんを上に表示し、スコアの低い順にソート
@@ -181,7 +139,6 @@ export default function ClientListPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-5">お客さん新規登録</h2>
             <ClientForm
-              showAuth
               onSubmit={handleCreate}
               onCancel={() => setShowForm(false)}
               submitting={submitting}
