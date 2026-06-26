@@ -12,7 +12,8 @@ import MealPhotoSection from '../../components/admin/MealPhotoSection'
 import MonthlyTable     from '../../components/admin/MonthlyTable'
 import CommentSection, { useClientCommentCount } from '../../components/admin/CommentSection'
 import EvaluationCard   from '../../components/EvaluationCard'
-import { useAuth }      from '../../contexts/AuthContext'
+import { useAuth }               from '../../contexts/AuthContext'
+import AdminRecordEditModal      from '../../components/admin/AdminRecordEditModal'
 
 const PERIODS = [
   { key: '1w',  label: '1週間',  days: 7   },
@@ -36,6 +37,8 @@ export default function ClientDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [toast,      setToast]      = useState(null)
   const [chartPeriod, setChartPeriod] = useState('1m')
+  const [refreshKey,  setRefreshKey]  = useState(0)
+  const [editModal,   setEditModal]   = useState(null) // { date, log } | null
 
   const clientCommentCount = useClientCommentCount(id)
   const { signOut }        = useAuth()
@@ -137,6 +140,21 @@ export default function ClientDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* ── 記録編集モーダル ── */}
+      {editModal && (
+        <AdminRecordEditModal
+          clientId={id}
+          date={editModal.date}
+          existingLog={editModal.log}
+          onClose={() => setEditModal(null)}
+          onSaved={() => {
+            setRefreshKey(k => k + 1)
+            fetchData()
+            showToast('success', '保存しました')
+          }}
+        />
+      )}
+
       {/* ── トースト ── */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium
@@ -188,6 +206,11 @@ export default function ClientDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEditModal({ date: format(new Date(), 'yyyy-MM-dd'), log: todayLog })}
+            className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            ＋ 記録を追加・編集
+          </button>
           <button onClick={() => setShowEdit(true)}
             className="px-3 py-1.5 text-sm font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
             編集
@@ -318,7 +341,11 @@ export default function ClientDetailPage() {
         {/* ══════════════════════════════════════════════
             3. 月間記録表
         ══════════════════════════════════════════════ */}
-        <MonthlyTable clientId={id} />
+        <MonthlyTable
+          clientId={id}
+          refreshKey={refreshKey}
+          onDateClick={(date, log) => setEditModal({ date, log })}
+        />
 
         {/* ══════════════════════════════════════════════
             6. コメント

@@ -138,7 +138,7 @@ const ROWS_MEAL = [
 // ── テーブル本体（スクロール ref・onScroll 受け取り） ──────────
 const DOW = ['日','月','火','水','木','金','土']
 
-function Table({ rows, days, wMap, mMap, year, month, todayStr, scrollRef, onScroll }) {
+function Table({ rows, days, wMap, mMap, year, month, todayStr, scrollRef, onScroll, onDateClick }) {
   return (
     <div className="overflow-x-auto" ref={scrollRef} onScroll={onScroll}>
       <table className="border-collapse text-xs" style={{ minWidth: `${days.length * 44 + 80}px` }}>
@@ -157,7 +157,8 @@ function Table({ rows, days, wMap, mMap, year, month, todayStr, scrollRef, onScr
               return (
                 <th key={d}
                   data-today={isToday ? 'true' : undefined}
-                  className={`text-center px-1 py-1.5 border-b min-w-[2.8rem]
+                  onClick={() => onDateClick?.(dateStr, wMap[dateStr] ?? null)}
+                  className={`text-center px-1 py-1.5 border-b min-w-[2.8rem] ${onDateClick ? 'cursor-pointer' : ''}
                     ${isToday
                       ? 'bg-yellow-200 border-b-2 border-b-yellow-500 text-yellow-800 font-bold'
                       : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200'}
@@ -198,7 +199,7 @@ function Table({ rows, days, wMap, mMap, year, month, todayStr, scrollRef, onScr
 }
 
 // ── メインコンポーネント ──────────────────────────────────────
-export default function MonthlyTable({ clientId }) {
+export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0 }) {
   const now = new Date()
   const [year,    setYear]    = useState(now.getFullYear())
   const [month,   setMonth]   = useState(now.getMonth() + 1)
@@ -241,7 +242,7 @@ export default function MonthlyTable({ clientId }) {
       setLoading(false)
     }
     fetchMonth()
-  }, [clientId, year, month])
+  }, [clientId, year, month, refreshKey])
 
   // 月変更時：手動スクロールフラグをリセット
   useEffect(() => {
@@ -365,7 +366,7 @@ export default function MonthlyTable({ clientId }) {
             <>
               <Table rows={ROWS_HEALTH} days={days} wMap={wMap} mMap={mMap}
                 year={year} month={month} todayStr={todayStr}
-                scrollRef={scrollRef1} onScroll={handleScroll1} />
+                scrollRef={scrollRef1} onScroll={handleScroll1} onDateClick={onDateClick} />
               <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
                 <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下・排便なし
                 　<span className="text-green-600 font-medium">緑字</span>＝朝→夜差 +0.5kg以内
@@ -385,7 +386,7 @@ export default function MonthlyTable({ clientId }) {
             <>
               <Table rows={ROWS_MEAL} days={days} wMap={wMap} mMap={mMap}
                 year={year} month={month} todayStr={todayStr}
-                scrollRef={scrollRef2} onScroll={handleScroll2} />
+                scrollRef={scrollRef2} onScroll={handleScroll2} onDateClick={onDateClick} />
               <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
                 スコア：<span className="text-blue-600 font-medium">90点以上</span>＝優秀
                 <span className="text-green-600 font-medium">80〜89点</span>＝良好
