@@ -157,7 +157,7 @@ const ROWS_MEAL = [
 // ── テーブル本体（連続日付対応版） ───────────────────────────
 const DOW = ['日','月','火','水','木','金','土']
 
-function Table({ rows, allDays, wMap, mMap, todayStr, scrollRef, onScroll, onDateClick }) {
+function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, onScroll, onDateClick }) {
   return (
     <div className="overflow-x-auto" ref={scrollRef} onScroll={onScroll}>
       <table className="border-collapse text-xs" style={{ minWidth: `${allDays.length * 44 + 80}px` }}>
@@ -169,11 +169,12 @@ function Table({ rows, allDays, wMap, mMap, todayStr, scrollRef, onScroll, onDat
               項目
             </th>
             {allDays.map(({ year, month, day, dateStr }) => {
-              const isFirst = day === 1
-              const dow     = DOW[new Date(year, month - 1, day).getDay()]
-              const isWE    = [0, 6].includes(new Date(year, month - 1, day).getDay())
-              const isToday = dateStr === todayStr
-              const hasDat  = !!wMap[dateStr]
+              const isFirst    = day === 1
+              const dow        = DOW[new Date(year, month - 1, day).getDay()]
+              const isWE       = [0, 6].includes(new Date(year, month - 1, day).getDay())
+              const isToday    = dateStr === todayStr
+              const isSelected = !isToday && dateStr === selectedDate
+              const hasDat     = !!wMap[dateStr]
               return (
                 <th key={dateStr}
                   data-today={isToday ? 'true' : undefined}
@@ -184,8 +185,10 @@ function Table({ rows, allDays, wMap, mMap, todayStr, scrollRef, onScroll, onDat
                     isFirst ? 'border-l-2 border-l-gray-300' : '',
                     isToday
                       ? 'bg-yellow-200 border-b-2 border-b-yellow-500 text-yellow-800 font-bold'
-                      : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200',
-                    !isToday && isWE ? 'text-red-400' : !isToday ? 'text-gray-400' : '',
+                      : isSelected
+                        ? 'bg-blue-100 border-b-2 border-b-blue-500 text-blue-800 font-bold'
+                        : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200',
+                    !isToday && !isSelected && isWE ? 'text-red-400' : !isToday && !isSelected ? 'text-gray-400' : '',
                     onDateClick ? 'cursor-pointer hover:opacity-80' : '',
                   ].join(' ')}
                 >
@@ -211,16 +214,18 @@ function Table({ rows, allDays, wMap, mMap, todayStr, scrollRef, onScroll, onDat
                 {row.label}
               </td>
               {allDays.map(({ dateStr, day }) => {
-                const isFirst = day === 1
-                const isToday = dateStr === todayStr
+                const isFirst    = day === 1
+                const isToday    = dateStr === todayStr
+                const isSelected = !isToday && dateStr === selectedDate
                 const { v, c } = row.cell(wMap[dateStr] ?? null, mMap[dateStr] ?? null)
                 return (
                   <td key={dateStr}
                     className={[
                       'text-center px-1 py-2 border-b border-gray-100',
                       c,
-                      isToday  ? 'bg-yellow-50' : '',
-                      isFirst  ? 'border-l-2 border-l-gray-200' : '',
+                      isToday    ? 'bg-yellow-50' : '',
+                      isSelected ? 'bg-blue-50'   : '',
+                      isFirst    ? 'border-l-2 border-l-gray-200' : '',
                     ].join(' ')}
                   >
                     {v}
@@ -236,7 +241,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, scrollRef, onScroll, onDat
 }
 
 // ── メインコンポーネント ──────────────────────────────────────
-export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0 }) {
+export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, selectedDate }) {
   const now = new Date()
   // ナビゲーション用（← → ボタンで制御するフォーカス月）
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -413,7 +418,8 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0 }) 
         {loading ? Spinner : (
           <>
             <Table rows={ROWS_HEALTH} allDays={allDays} wMap={wMap} mMap={mMap}
-              todayStr={todayStr} scrollRef={scrollRef1} onScroll={handleScroll1}
+              todayStr={todayStr} selectedDate={selectedDate}
+              scrollRef={scrollRef1} onScroll={handleScroll1}
               onDateClick={onDateClick} />
             <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
               <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下・排便なし
@@ -431,7 +437,8 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0 }) 
         {loading ? Spinner : (
           <>
             <Table rows={ROWS_MEAL} allDays={allDays} wMap={wMap} mMap={mMap}
-              todayStr={todayStr} scrollRef={scrollRef2} onScroll={handleScroll2}
+              todayStr={todayStr} selectedDate={selectedDate}
+              scrollRef={scrollRef2} onScroll={handleScroll2}
               onDateClick={onDateClick} />
             <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
               スコア：<span className="text-blue-600 font-medium">90点以上</span>＝優秀

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -14,6 +14,7 @@ import CommentSection, { useClientCommentCount } from '../../components/admin/Co
 import EvaluationCard   from '../../components/EvaluationCard'
 import { useAuth }               from '../../contexts/AuthContext'
 import AdminRecordEditModal      from '../../components/admin/AdminRecordEditModal'
+import DailyMealPhotos           from '../../components/admin/DailyMealPhotos'
 
 const PERIODS = [
   { key: '1w',  label: '1週間',  days: 7   },
@@ -36,9 +37,11 @@ export default function ClientDetailPage() {
   const [showDelete, setShowDelete] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [toast,      setToast]      = useState(null)
-  const [chartPeriod, setChartPeriod] = useState('1m')
-  const [refreshKey,  setRefreshKey]  = useState(0)
-  const [editModal,   setEditModal]   = useState(null) // { date, log } | null
+  const [chartPeriod,      setChartPeriod]      = useState('1m')
+  const [refreshKey,       setRefreshKey]       = useState(0)
+  const [editModal,        setEditModal]        = useState(null)
+  const [selectedPhotoDate, setSelectedPhotoDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const mealPhotoRef = useRef(null)
 
   const clientCommentCount = useClientCommentCount(id)
   const { signOut }        = useAuth()
@@ -344,7 +347,14 @@ export default function ClientDetailPage() {
         <MonthlyTable
           clientId={id}
           refreshKey={refreshKey}
-          onDateClick={(date, log) => setEditModal({ date, log })}
+          selectedDate={selectedPhotoDate}
+          onDateClick={(date) => {
+            setSelectedPhotoDate(date)
+            // 食事写真エリアへスクロール（少し遅延して確実に）
+            setTimeout(() => {
+              mealPhotoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }, 80)
+          }}
         />
 
         {/* ══════════════════════════════════════════════
@@ -363,9 +373,13 @@ export default function ClientDetailPage() {
         </section>
 
         {/* ══════════════════════════════════════════════
-            7. 食事写真
+            7. 食事写真（日付選択連動）
         ══════════════════════════════════════════════ */}
-        <MealPhotoSection clientId={id} />
+        <DailyMealPhotos
+          clientId={id}
+          date={selectedPhotoDate}
+          sectionRef={mealPhotoRef}
+        />
 
         {/* ══════════════════════════════════════════════
             8. 体型写真
