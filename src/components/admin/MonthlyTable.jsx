@@ -212,8 +212,8 @@ export default function MonthlyTable({ clientId }) {
   const isSyncing      = useRef(false)
   const userScrolled   = useRef(false)   // 手動スクロール済みフラグ
 
-  // アニメーション関連
-  const [slideOut, setSlideOut] = useState(null) // null | 'left' | 'right'
+  // アニメーション：'idle' | 'exit-left' | 'exit-right' | 'enter-left' | 'enter-right' | 'entering'
+  const [animState, setAnimState] = useState('idle')
   const navigating = useRef(false)
 
   const todayStr   = format(new Date(), 'yyyy-MM-dd')
@@ -285,17 +285,33 @@ export default function MonthlyTable({ clientId }) {
     requestAnimationFrame(() => { isSyncing.current = false })
   }
 
-  // 月切り替え（スライドアニメーション付き）
+  // 月切り替え（2フェーズ スライドアニメーション）
+  // 前月: 現在→右退場、新月→左から入場
+  // 翌月: 現在→左退場、新月→右から入場
   function navigate(delta) {
     if (navigating.current) return
     navigating.current = true
-    setSlideOut(delta > 0 ? 'left' : 'right')
+
+    // Phase 1: 現在のコンテンツをスライドアウト
+    setAnimState(delta > 0 ? 'exit-left' : 'exit-right')
+
     setTimeout(() => {
+      // Phase 2a: 月を変更し、新コンテンツを反対側に即配置（トランジションなし）
       const n = addMonth(year, month, delta)
       setYear(n.year); setMonth(n.month)
-      setSlideOut(null)
-      navigating.current = false
-    }, 160)
+      setAnimState(delta > 0 ? 'enter-right' : 'enter-left')
+
+      // Phase 2b: 次のフレームで中央へスライドイン
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setAnimState('entering')
+          setTimeout(() => {
+            setAnimState('idle')
+            navigating.current = false
+          }, 180)
+        })
+      })
+    }, 170)
   }
 
   const totalDays = getDaysInMonth(new Date(year, month - 1))
@@ -323,14 +339,18 @@ export default function MonthlyTable({ clientId }) {
     </div>
   )
 
-  // スライドアニメーション用スタイル
-  const slideStyle = {
-    transform:  slideOut === 'left'  ? 'translateX(-16px)'
-              : slideOut === 'right' ? 'translateX(16px)'
-              : 'translateX(0)',
-    opacity:    slideOut ? 0 : 1,
-    transition: 'transform 0.16s ease, opacity 0.16s ease',
+  // 2フェーズアニメーション用スタイル
+  function getSlideStyle() {
+    switch (animState) {
+      case 'exit-left':   return { transform: 'translateX(-32px)', opacity: 0, transition: 'transform 0.17s ease, opacity 0.17s ease' }
+      case 'exit-right':  return { transform: 'translateX(32px)',  opacity: 0, transition: 'transform 0.17s ease, opacity 0.17s ease' }
+      case 'enter-right': return { transform: 'translateX(32px)',  opacity: 0, transition: 'none' } // 即配置（アニメなし）
+      case 'enter-left':  return { transform: 'translateX(-32px)', opacity: 0, transition: 'none' } // 即配置（アニメなし）
+      case 'entering':    return { transform: 'translateX(0)',     opacity: 1, transition: 'transform 0.17s ease, opacity 0.17s ease' }
+      default:            return { transform: 'translateX(0)',     opacity: 1, transition: 'none' }
+    }
   }
+  const slideStyle = getSlideStyle()
 
   return (
     <>

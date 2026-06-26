@@ -54,8 +54,12 @@ export default function CommentSection({ clientId, showToast }) {
 
   useEffect(() => { fetchComments() }, [clientId])
 
+  // ページ全体ではなくコメントコンテナ内だけをスクロール
   useEffect(() => {
-    if (!loading) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!loading && bottomRef.current) {
+      const container = bottomRef.current.parentElement
+      if (container) container.scrollTop = container.scrollHeight
+    }
   }, [comments, loading])
 
   async function handleSend() {

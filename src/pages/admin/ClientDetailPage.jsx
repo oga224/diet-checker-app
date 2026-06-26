@@ -62,8 +62,8 @@ export default function ClientDetailPage() {
 
   useEffect(() => { fetchData() }, [id])
 
-  // 詳細画面を開いたとき必ずページ最上部から表示
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }) }, [])
+  // id が変わるたびにページ最上部へ（一覧→詳細の遷移でも必ず発火）
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }) }, [id])
 
   function showToast(type, msg) {
     setToast({ type, msg })
