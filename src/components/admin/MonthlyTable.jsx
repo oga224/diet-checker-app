@@ -403,12 +403,12 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0 }) 
     <>
       {/* ── 表1：体調・生活記録 ── */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="bg-gray-50 border-b border-gray-200 flex items-center justify-between px-5 py-3">
-          <div>
+        <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">
+          <div className="flex items-center justify-center mb-2">{Nav}</div>
+          <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-600">表1：体調・生活記録</h2>
-            {rangeLabel && <p className="text-xs text-gray-400 mt-0.5">{rangeLabel}　左右スクロールで全期間を確認</p>}
+            {rangeLabel && <p className="text-xs text-gray-400">{rangeLabel}</p>}
           </div>
-          {Nav}
         </div>
         {loading ? Spinner : (
           <>
