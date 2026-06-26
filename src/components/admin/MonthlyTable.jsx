@@ -33,11 +33,11 @@ function buildAllDays(startY, startM, endY, endM) {
 const ROWS_HEALTH = [
   {
     key: 'morning_kg', label: '朝体重',
-    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-700' } : { v: '', c: '' },
+    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-900' } : { v: '', c: '' },
   },
   {
     key: 'evening_kg', label: '夜体重',
-    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-700' } : { v: '', c: '' },
+    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-900' } : { v: '', c: '' },
   },
   {
     key: 'weight_diff', label: '朝→夜差',
@@ -67,8 +67,8 @@ const ROWS_HEALTH = [
   {
     key: 'bowel', label: '排便',
     cell: (w) => {
-      if (w?.bowel_movement === true)  return { v: '○', c: 'text-gray-700' }
-      if (w?.bowel_movement === false) return { v: '×', c: 'text-red-500 font-bold' }
+      if (w?.bowel_movement === true) return { v: '○', c: 'text-gray-900' }
+      // false は空欄（× を表示しない）
       return { v: '', c: '' }
     },
   },
@@ -76,21 +76,21 @@ const ROWS_HEALTH = [
     key: 'water', label: '水分量',
     cell: (w) => {
       if (w?.water_ml == null) return { v: '', c: '' }
-      return { v: `${(w.water_ml / 1000).toFixed(1)}L`, c: w.water_ml >= 1500 ? 'text-gray-700' : 'text-red-500 font-bold' }
+      return { v: `${(w.water_ml / 1000).toFixed(1)}L`, c: w.water_ml >= 1500 ? 'text-gray-900' : 'text-red-500 font-bold' }
     },
   },
   {
     key: 'toilet', label: 'トイレ',
     cell: (w) => {
       if (w?.toilet_count == null) return { v: '', c: '' }
-      return { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-700' : 'text-red-500 font-bold' }
+      return { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-900' : 'text-red-500 font-bold' }
     },
   },
   {
     key: 'sleep', label: '睡眠',
     cell: (w) => {
       if (w?.sleep_hours == null) return { v: '', c: '' }
-      return { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-700' : 'text-red-500 font-bold' }
+      return { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-900' : 'text-red-500 font-bold' }
     },
   },
 ]
@@ -100,31 +100,31 @@ const ROWS_MEAL = [
   {
     key: 'breakfast', label: '朝食',
     cell: (w) => {
-      if (w?.ate_breakfast === true)  return { v: '○', c: 'text-gray-700' }
-      if (w?.ate_breakfast === false) return { v: '×', c: 'text-gray-400' }
+      if (w?.ate_breakfast === true)  return { v: '○', c: 'text-gray-900' }
+      if (w?.ate_breakfast === false) return { v: '×', c: 'text-gray-600' }
       return { v: '', c: '' }
     },
   },
   {
     key: 'lunch', label: '昼食',
     cell: (w) => {
-      if (w?.ate_lunch === true)  return { v: '○', c: 'text-gray-700' }
-      if (w?.ate_lunch === false) return { v: '×', c: 'text-gray-400' }
+      if (w?.ate_lunch === true)  return { v: '○', c: 'text-gray-900' }
+      if (w?.ate_lunch === false) return { v: '×', c: 'text-gray-600' }
       return { v: '', c: '' }
     },
   },
   {
     key: 'dinner', label: '夕食',
     cell: (w) => {
-      if (w?.ate_dinner === true)  return { v: '○', c: 'text-gray-700' }
-      if (w?.ate_dinner === false) return { v: '×', c: 'text-gray-400' }
+      if (w?.ate_dinner === true)  return { v: '○', c: 'text-gray-900' }
+      if (w?.ate_dinner === false) return { v: '×', c: 'text-gray-600' }
       return { v: '', c: '' }
     },
   },
   {
     key: 'snack', label: '間食',
     cell: (w) => {
-      if (w?.ate_snack === false) return { v: 'なし', c: 'text-gray-700' }
+      if (w?.ate_snack === false) return { v: 'なし', c: 'text-gray-900' }
       if (w?.ate_snack === true)  return { v: 'あり', c: 'text-orange-500' }
       return { v: '', c: '' }
     },
@@ -188,7 +188,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
                       : isSelected
                         ? 'bg-blue-100 border-b-2 border-b-blue-500 text-blue-800 font-bold'
                         : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200',
-                    !isToday && !isSelected && isWE ? 'text-red-400' : !isToday && !isSelected ? 'text-gray-400' : '',
+                    !isToday && !isSelected && isWE ? 'text-red-500' : !isToday && !isSelected ? 'text-gray-700' : '',
                     onDateClick ? 'cursor-pointer hover:opacity-80' : '',
                   ].join(' ')}
                 >
@@ -199,7 +199,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
                     </div>
                   )}
                   <div className="font-medium leading-none">{day}</div>
-                  <div className={`leading-none mt-0.5 ${isToday ? 'text-yellow-600' : 'text-gray-300'}`}>{dow}</div>
+                  <div className={`leading-none mt-0.5 ${isToday ? 'text-yellow-600' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>{dow}</div>
                 </th>
               )
             })}
@@ -241,7 +241,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
 }
 
 // ── メインコンポーネント ──────────────────────────────────────
-export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, selectedDate }) {
+export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, selectedDate, renderBetween }) {
   const now = new Date()
   // ナビゲーション用（← → ボタンで制御するフォーカス月）
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -428,6 +428,9 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
           </>
         )}
       </section>
+
+      {/* ── renderBetween スロット（表1と表2の間に挿入） ── */}
+      {renderBetween}
 
       {/* ── 表2：食事・記録状況 ── */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">

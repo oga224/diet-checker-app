@@ -112,9 +112,12 @@ export default function ClientDetailPage() {
   )
 
   // ── 集計値 ─────────────────────────────────────────────────
-  const todayStr   = format(new Date(), 'yyyy-MM-dd')
-  const todayLog   = logs.find((l) => l.date === todayStr) ?? null
-  const todayMeal  = mealLogMap[todayStr] ?? null
+  const todayStr     = format(new Date(), 'yyyy-MM-dd')
+  const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
+  const todayLog     = logs.find((l) => l.date === todayStr) ?? null
+  const todayMeal    = mealLogMap[todayStr] ?? null
+  const yesterdayLog  = logs.find((l) => l.date === yesterdayStr) ?? null
+  const yesterdayMeal = mealLogMap[yesterdayStr] ?? null
   const latestLog  = logs.at(-1) ?? null
   const currentKg  = latestLog?.morning_kg ?? null
 
@@ -282,22 +285,25 @@ export default function ClientDetailPage() {
             <p className="text-sm text-gray-500 mb-2">📍 {client.address}</p>
           )}
           {client.memo && (
-            <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3">{client.memo}</p>
+            <div className="mt-3 border-l-4 border-blue-400 pl-4 py-1">
+              <p className="text-xs font-bold text-blue-600 mb-1">目的・悩み</p>
+              <p className="text-base font-semibold text-gray-900 leading-relaxed">{client.memo}</p>
+            </div>
           )}
         </section>
 
         {/* ══════════════════════════════════════════════
-            2. 健康スコア
+            2. 昨日の健康スコア
         ══════════════════════════════════════════════ */}
         <section>
           <p className="text-xs text-gray-400 font-medium mb-2 px-1">
-            今日の健康スコア（{todayStr}）
+            昨日の健康スコア（{yesterdayStr}）
           </p>
-          {todayLog ? (
-            <EvaluationCard log={todayLog} mealLog={todayMeal} admin />
+          {yesterdayLog ? (
+            <EvaluationCard log={yesterdayLog} mealLog={yesterdayMeal} admin />
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 text-sm text-gray-400 text-center">
-              本日の記録はまだありません
+              昨日のデータがありません
             </div>
           )}
         </section>
@@ -344,21 +350,30 @@ export default function ClientDetailPage() {
         {/* ══════════════════════════════════════════════
             3. 月間記録表
         ══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════
+            4. 表1 → 5. 食事写真 → 6. 表2
+        ══════════════════════════════════════════════ */}
         <MonthlyTable
           clientId={id}
           refreshKey={refreshKey}
           selectedDate={selectedPhotoDate}
           onDateClick={(date) => {
             setSelectedPhotoDate(date)
-            // 食事写真エリアへスクロール（少し遅延して確実に）
             setTimeout(() => {
               mealPhotoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
             }, 80)
           }}
+          renderBetween={
+            <DailyMealPhotos
+              clientId={id}
+              date={selectedPhotoDate}
+              sectionRef={mealPhotoRef}
+            />
+          }
         />
 
         {/* ══════════════════════════════════════════════
-            6. コメント
+            7. コメント
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
           <div className="flex items-center gap-2 mb-4">
@@ -371,15 +386,6 @@ export default function ClientDetailPage() {
           </div>
           <CommentSection clientId={id} showToast={showToast} />
         </section>
-
-        {/* ══════════════════════════════════════════════
-            7. 食事写真（日付選択連動）
-        ══════════════════════════════════════════════ */}
-        <DailyMealPhotos
-          clientId={id}
-          date={selectedPhotoDate}
-          sectionRef={mealPhotoRef}
-        />
 
         {/* ══════════════════════════════════════════════
             8. 体型写真
