@@ -3,64 +3,95 @@ import { format, parseISO } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase } from '../../lib/supabase'
 
-function Bubble({ comment }) {
-  const isAdmin = comment.sender === 'admin' || !comment.sender
-  const dateStr = format(parseISO(comment.created_at), 'M/d (E) HH:mm', { locale: ja })
-
+// ── コメントカード（種別ごとに色分け） ─────────────────────────
+function CommentCard({ item }) {
+  const typeConfig = {
+    daily: {
+      label:   '📝 今日のコメント',
+      border:  'border-l-yellow-400',
+      labelCls: 'text-yellow-700',
+      bg:       'bg-yellow-50',
+    },
+    client_message: {
+      label:   '💬 先生へのメッセージ',
+      border:  'border-l-green-400',
+      labelCls: 'text-green-700',
+      bg:       'bg-green-50',
+    },
+    admin_message: {
+      label:   '👩‍⚕️ 管理者からの返信',
+      border:  'border-l-blue-400',
+      labelCls: 'text-blue-700',
+      bg:       'bg-blue-50',
+    },
+  }
+  const cfg = typeConfig[item.type]
   return (
-    <div className={`flex gap-2 ${isAdmin ? 'flex-row-reverse' : 'flex-row'}`}>
-      {/* アバター */}
-      <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white mt-1
-        ${isAdmin ? 'bg-blue-500' : 'bg-green-500'}`}>
-        {isAdmin ? '管' : '客'}
+    <div className={`border-l-4 ${cfg.border} ${cfg.bg} rounded-r-xl px-4 py-3 space-y-1`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-xs font-bold ${cfg.labelCls}`}>{cfg.label}</span>
+        <span className="text-xs text-gray-400 flex-shrink-0">
+          {item.dateLabel}{item.timeLabel ? ` ${item.timeLabel}` : ''}
+        </span>
       </div>
-      {/* 吹き出し */}
-      <div className={`max-w-[75%] flex flex-col gap-1 ${isAdmin ? 'items-end' : 'items-start'}`}>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold ${isAdmin ? 'text-blue-600' : 'text-green-600'}`}>
-            {isAdmin ? '管理者' : 'お客さん'}
-          </span>
-          <span className="text-xs text-gray-400">{dateStr}</span>
-        </div>
-        <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm
-          ${isAdmin
-            ? 'bg-blue-600 text-white rounded-tr-none'
-            : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200'
-          }`}>
-          {comment.body}
-        </div>
-      </div>
+      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{item.body}</p>
     </div>
   )
 }
 
 export default function CommentSection({ clientId, showToast }) {
-  const [comments, setComments] = useState([])
-  const [text, setText]         = useState('')
-  const [sending, setSending]   = useState(false)
-  const [loading, setLoading]   = useState(true)
-  const bottomRef               = useRef(null)
-  const textareaRef             = useRef(null)
+  const [items,   setItems]   = useState([])   // マージ済み一覧
+  const [text,    setText]    = useState('')
+  const [sending, setSending] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const textareaRef           = useRef(null)
 
-  async function fetchComments() {
-    const { data, error } = await supabase
-      .from('admin_comments')
-      .select('*')
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: true })
-    if (!error) setComments(data ?? [])
+  async function fetchAll() {
+    setLoading(true)
+    const [acRes, wlRes] = await Promise.all([
+      // admin_comments（管理者↔お客さんのメッセージ）
+      supabase.from('admin_comments').select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false }),
+      // weight_logs.comment（今日のコメント）
+      supabase.from('weight_logs')
+        .select('date, comment')
+        .eq('client_id', clientId)
+        .not('comment', 'is', null)
+        .order('date', { ascending: false }),
+    ])
+
+    // admin_comments を変換
+    const messages = (acRes.data ?? []).map((c) => ({
+      type:      c.sender === 'admin' ? 'admin_message' : 'client_message',
+      sortKey:   c.created_at,
+      dateLabel: format(parseISO(c.created_at), 'yyyy/M/d (E)', { locale: ja }),
+      timeLabel: format(parseISO(c.created_at), 'HH:mm', { locale: ja }),
+      body:      c.body,
+      id:        `msg-${c.id}`,
+    }))
+
+    // weight_logs.comment を変換（空文字は除外）
+    const dailyComments = (wlRes.data ?? [])
+      .filter((l) => l.comment?.trim())
+      .map((l) => ({
+        type:      'daily',
+        sortKey:   `${l.date}T23:59:59`, // 日次は日の末尾として扱う
+        dateLabel: format(parseISO(l.date), 'yyyy/M/d (E)', { locale: ja }),
+        timeLabel: null,
+        body:      l.comment,
+        id:        `daily-${l.date}`,
+      }))
+
+    // 時系列降順（新しい順）でマージ
+    const all = [...messages, ...dailyComments]
+      .sort((a, b) => b.sortKey.localeCompare(a.sortKey))
+
+    setItems(all)
     setLoading(false)
   }
 
-  useEffect(() => { fetchComments() }, [clientId])
-
-  // ページ全体ではなくコメントコンテナ内だけをスクロール
-  useEffect(() => {
-    if (!loading && bottomRef.current) {
-      const container = bottomRef.current.parentElement
-      if (container) container.scrollTop = container.scrollHeight
-    }
-  }, [comments, loading])
+  useEffect(() => { fetchAll() }, [clientId])
 
   async function handleSend() {
     const body = text.trim()
@@ -76,7 +107,7 @@ export default function CommentSection({ clientId, showToast }) {
       showToast('error', `送信失敗：${error.message}`)
     } else {
       setText('')
-      fetchComments()
+      fetchAll()
     }
   }
 
@@ -84,39 +115,46 @@ export default function CommentSection({ clientId, showToast }) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend()
   }
 
-  const clientCount = comments.filter((c) => c.sender === 'client').length
+  // 件数集計
+  const dailyCount   = items.filter((i) => i.type === 'daily').length
+  const clientMsgCnt = items.filter((i) => i.type === 'client_message').length
 
   return (
-    <div className="flex flex-col h-full">
-      {/* お客さんコメント件数バナー */}
-      {clientCount > 0 && (
-        <div className="mb-3 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2 flex-shrink-0">
-          <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-          <p className="text-sm text-green-700 font-medium">
-            お客さんから {clientCount}件のメッセージがあります
-          </p>
+    <div className="flex flex-col gap-4">
+      {/* ── 件数バナー ── */}
+      {(dailyCount > 0 || clientMsgCnt > 0) && (
+        <div className="flex flex-wrap gap-2">
+          {dailyCount > 0 && (
+            <span className="text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-1.5 rounded-full">
+              📝 今日のコメント {dailyCount}件
+            </span>
+          )}
+          {clientMsgCnt > 0 && (
+            <span className="text-xs font-medium bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-full">
+              💬 先生へのメッセージ {clientMsgCnt}件
+            </span>
+          )}
         </div>
       )}
 
-      {/* コメント一覧 */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0 max-h-96 bg-gray-50 rounded-xl p-4">
+      {/* ── コメント一覧 ── */}
+      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
         {loading ? (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
           </div>
-        ) : comments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
             <span className="text-4xl">💬</span>
-            <p className="text-sm">まだコメントはありません</p>
+            <p className="text-sm">コメントはまだありません</p>
           </div>
         ) : (
-          comments.map((c) => <Bubble key={c.id} comment={c} />)
+          items.map((item) => <CommentCard key={item.id} item={item} />)
         )}
-        <div ref={bottomRef} />
       </div>
 
-      {/* 入力欄 */}
-      <div className="mt-4 flex gap-3 items-end flex-shrink-0">
+      {/* ── 管理者コメント入力 ── */}
+      <div className="border-t border-gray-100 pt-4 flex gap-3 items-end">
         <textarea
           ref={textareaRef}
           value={text}
@@ -135,12 +173,12 @@ export default function CommentSection({ clientId, showToast }) {
           {sending ? '送信中…' : '送信'}
         </button>
       </div>
-      <p className="text-xs text-gray-400 mt-1.5">Ctrl + Enter でも送信できます</p>
+      <p className="text-xs text-gray-400">Ctrl + Enter でも送信できます</p>
     </div>
   )
 }
 
-/** タブバッジ用：未読（クライアントコメント）件数を返す hook */
+/** ヘッダーバッジ用：お客さんメッセージ件数を返す hook */
 export function useClientCommentCount(clientId) {
   const [count, setCount] = useState(0)
   useEffect(() => {
