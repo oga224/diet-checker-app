@@ -159,7 +159,7 @@ export default function ClientListPage() {
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">お客さん一覧</h1>
-          <p className="text-sm text-gray-500 mt-0.5">整骨院体重管理システム</p>
+          <p className="text-sm text-gray-500 mt-0.5">ダイエット管理アプリ</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowForm(true)}
