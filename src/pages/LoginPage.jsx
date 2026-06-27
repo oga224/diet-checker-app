@@ -45,8 +45,8 @@ export default function LoginPage() {
           <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
             <span className="text-white text-2xl font-black">体</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-800">ダイエット管理アプリ</h1>
-          <p className="text-sm text-gray-400 mt-1">整骨院向けダイエット管理システム</p>
+          <h1 className="text-2xl font-bold text-gray-800">体重管理システム</h1>
+          <p className="text-sm text-gray-400 mt-1">整骨院向け体重管理アプリ</p>
         </div>
 
         {/* フォーム */}

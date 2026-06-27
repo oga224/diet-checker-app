@@ -22,7 +22,7 @@ export default function AppHeader() {
           className="font-serif text-[2.4rem] font-light text-white leading-tight mb-3"
           style={{ letterSpacing: '0.02em' }}
         >
-          ダイエット管理アプリ
+          習慣チェッカー
         </h1>
 
         <p className="text-sm" style={{ color: '#8A9BC0', letterSpacing: '0.06em' }}>
