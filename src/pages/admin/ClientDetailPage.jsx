@@ -131,16 +131,13 @@ export default function ClientDetailPage() {
     夜:   l.evening_kg ?? undefined,
   }))
 
-  // 編集フォーム初期値
+  // 編集フォーム初期値（表示5項目に絞る）
   const editInitial = {
     name:        client.name        ?? '',
-    kana:        client.kana        ?? '',
-    phone:       client.phone       ?? '',
-    goal_weight: client.goal_weight != null ? String(client.goal_weight) : '',
+    age:         client.age         != null ? String(client.age)        : '',
+    height_cm:   client.height_cm   != null ? String(client.height_cm) : '',
+    goal_weight: client.goal_weight != null ? String(client.goal_weight): '',
     memo:        client.memo        ?? '',
-    age:         client.age         != null ? String(client.age)         : '',
-    height_cm:   client.height_cm   != null ? String(client.height_cm)  : '',
-    address:     client.address     ?? '',
     is_active:   client.is_active   ?? true,
   }
 
@@ -249,45 +246,44 @@ export default function ClientDetailPage() {
                 </span>
             }
           </div>
+          {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-gray-400">氏名</p>
+              <p className="font-semibold text-gray-900">{client.name}</p>
+              {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
+            </div>
             {client.age != null && (
               <div>
                 <p className="text-xs text-gray-400">年齢</p>
-                <p className="font-medium text-gray-700">{client.age} 歳</p>
+                <p className="font-medium text-gray-800">{client.age} 歳</p>
               </div>
             )}
             {client.height_cm != null && (
               <div>
                 <p className="text-xs text-gray-400">身長</p>
-                <p className="font-medium text-gray-700">{client.height_cm} cm</p>
-              </div>
-            )}
-            {currentKg != null && (
-              <div>
-                <p className="text-xs text-gray-400">現在体重</p>
-                <p className="font-bold text-blue-600 text-lg">{currentKg} kg</p>
+                <p className="font-medium text-gray-800">{client.height_cm} cm</p>
               </div>
             )}
             {client.goal_weight != null && (
               <div>
                 <p className="text-xs text-gray-400">目標体重</p>
-                <p className="font-medium text-gray-700">{client.goal_weight} kg</p>
-              </div>
-            )}
-            {client.phone && (
-              <div>
-                <p className="text-xs text-gray-400">電話番号</p>
-                <p className="font-medium text-gray-700">{client.phone}</p>
+                <p className="font-medium text-gray-800">{client.goal_weight} kg</p>
               </div>
             )}
           </div>
-          {client.address && (
-            <p className="text-sm text-gray-500 mb-2">📍 {client.address}</p>
+          {/* 現在体重（最新記録から） */}
+          {currentKg != null && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-400 mb-0.5">現在体重（最新）</p>
+              <p className="font-bold text-blue-600 text-lg">{currentKg} kg</p>
+            </div>
           )}
+          {/* 目的・悩み（最重要・目立つデザイン） */}
           {client.memo && (
-            <div className="mt-3 border-l-4 border-blue-400 pl-4 py-1">
-              <p className="text-xs font-bold text-blue-600 mb-1">目的・悩み</p>
-              <p className="text-base font-semibold text-gray-900 leading-relaxed">{client.memo}</p>
+            <div className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-xl">
+              <p className="text-xs font-bold text-blue-600 mb-1.5">目的・悩み</p>
+              <p className="text-base font-bold text-gray-900 leading-relaxed">{client.memo}</p>
             </div>
           )}
         </section>
