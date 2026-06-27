@@ -46,9 +46,9 @@ function WeightInput({ label, value, onChange }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="--.-"
-          className="text-5xl font-black text-center text-gray-800 bg-gray-50 border-b-4 border-blue-300 focus:border-blue-500 outline-none w-44 py-2 rounded-t-xl"
+          className="text-5xl font-black text-center text-gray-800 bg-gray-50 border-b-4 border-blue-300 focus:border-blue-500 outline-none flex-1 min-w-0 py-2 rounded-t-xl"
         />
-        <span className="text-2xl font-bold text-gray-400 mb-2">kg</span>
+        <span className="text-2xl font-bold text-gray-400 mb-2 flex-shrink-0">kg</span>
       </div>
     </div>
   )
@@ -90,19 +90,20 @@ function BigToggle({ label, value, onChange,
 // ─────────────────────────────────────────────────────────────
 function NumberRow({ emoji, label, value, onChange, unit, min, max, step = '1', placeholder }) {
   return (
-    <div className="flex items-center gap-4 py-4 border-b border-gray-100">
-      <span className="text-3xl flex-shrink-0">{emoji}</span>
-      <p className="text-base font-bold text-gray-700 w-24 flex-shrink-0">{label}</p>
-      <input
-        type="number"
-        inputMode="numeric"
-        step={step} min={min} max={max}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="text-3xl font-bold text-center text-gray-800 bg-gray-50 border-b-2 border-gray-300 focus:border-blue-400 outline-none w-28 py-1 rounded-t-lg"
-      />
-      <span className="text-lg text-gray-400 font-medium">{unit}</span>
+    <div className="py-4 border-b border-gray-100">
+      <p className="text-base font-bold text-gray-600 mb-2">{emoji} {label}</p>
+      <div className="flex items-end gap-3">
+        <input
+          type="number"
+          inputMode="numeric"
+          step={step} min={min} max={max}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="text-4xl font-bold text-center text-gray-800 bg-gray-50 border-b-4 border-gray-300 focus:border-blue-400 outline-none flex-1 min-w-0 py-2 rounded-t-xl"
+        />
+        <span className="text-xl text-gray-400 font-bold mb-2 flex-shrink-0">{unit}</span>
+      </div>
     </div>
   )
 }
@@ -256,7 +257,7 @@ export default function ClientRecordPage() {
 
   // ── 入力画面 ──────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-white pb-20">
+    <div className="min-h-screen bg-white pb-20 overflow-x-hidden">
       {/* ヘッダー */}
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3 mb-1">
