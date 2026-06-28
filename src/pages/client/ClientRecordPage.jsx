@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { format } from 'date-fns'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { format, parseISO } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase }    from '../../lib/supabase'
 import PhotoUpload     from '../../components/PhotoUpload'
@@ -112,7 +112,11 @@ function NumberRow({ emoji, label, value, onChange, unit, min, max, step = '1', 
 // メインコンポーネント
 // ─────────────────────────────────────────────────────────────
 export default function ClientRecordPage() {
-  const { id } = useParams()
+  const { id, date: urlDate } = useParams()
+  const navigate = useNavigate()
+  const todayActual = format(new Date(), 'yyyy-MM-dd')
+  const recordDate  = urlDate || todayActual
+  const isPastEntry = !!urlDate && urlDate < todayActual
   const [form,         setForm]         = useState(EMPTY)
   const [photos,       setPhotos]       = useState(EMPTY_PHOTOS)
   const [clientName,   setClientName]   = useState('')
@@ -125,8 +129,8 @@ export default function ClientRecordPage() {
   const [existingLogId,  setExistingLogId]  = useState(null)
   const [existingMealId, setExistingMealId] = useState(null)
 
-  const today      = format(new Date(), 'yyyy-MM-dd')
-  const todayLabel = format(new Date(), 'M月d日 (E)', { locale: ja })
+  const today      = recordDate
+  const todayLabel = format(parseISO(recordDate), 'M月d日 (E)', { locale: ja })
 
   // 既存データ取得
   useEffect(() => {
@@ -261,11 +265,18 @@ export default function ClientRecordPage() {
       {/* ヘッダー */}
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3 mb-1">
-          <Link to={`/client/${id}`} className="text-blue-200 text-2xl p-1">‹</Link>
+          <button
+            type="button"
+            onClick={() => isPastEntry ? navigate(`/client/${id}/calendar`) : navigate(`/client/${id}`)}
+            className="text-blue-200 text-2xl p-1"
+          >‹</button>
           <p className="text-blue-100 text-lg">{todayLabel}</p>
+          {isPastEntry && (
+            <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">過去日</span>
+          )}
         </div>
         <h1 className="text-2xl font-bold pl-9">
-          {clientName ? `${clientName} さんの記録` : '今日の記録'}
+          {clientName ? `${clientName} さんの記録` : '記録入力'}
         </h1>
       </header>
 

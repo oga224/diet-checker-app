@@ -4,7 +4,22 @@ import { ja } from 'date-fns/locale'
 import { supabase } from '../../lib/supabase'
 
 // ── コメントカード（種別ごとに色分け） ─────────────────────────
-function CommentCard({ item }) {
+function CommentCard({ item, onEdit, onDelete }) {
+  const [editing, setEditing]   = useState(false)
+  const [editText, setEditText] = useState(item.body)
+  const [confirm, setConfirm]   = useState(false)
+  const [saving, setSaving]     = useState(false)
+
+  // admin_message のみ編集・削除可
+  const canEdit = item.type === 'admin_message' && onEdit && onDelete
+
+  async function handleSave() {
+    if (!editText.trim()) return
+    setSaving(true); await onEdit(item.id, editText.trim()); setSaving(false); setEditing(false)
+  }
+  async function handleDelete() {
+    setSaving(true); await onDelete(item.id); setSaving(false); setConfirm(false)
+  }
   const typeConfig = {
     daily: {
       label:   '📝 今日のコメント',
@@ -30,11 +45,48 @@ function CommentCard({ item }) {
     <div className={`border-l-4 ${cfg.border} ${cfg.bg} rounded-r-xl px-4 py-3 space-y-1`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`text-xs font-bold ${cfg.labelCls}`}>{cfg.label}</span>
-        <span className="text-xs text-gray-400 flex-shrink-0">
-          {item.dateLabel}{item.timeLabel ? ` ${item.timeLabel}` : ''}
-        </span>
+        <div className="flex items-center gap-2">
+          {item.edited && <span className="text-xs text-gray-300">（編集済み）</span>}
+          <span className="text-xs text-gray-400">
+            {item.dateLabel}{item.timeLabel ? ` ${item.timeLabel}` : ''}
+          </span>
+        </div>
       </div>
-      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{item.body}</p>
+      {editing ? (
+        <div className="space-y-2">
+          <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-400 resize-none" />
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving}
+              className="text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+              {saving ? '…' : '保存'}
+            </button>
+            <button onClick={() => { setEditing(false); setEditText(item.body) }}
+              className="text-xs text-gray-500 hover:text-gray-700">キャンセル</button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{item.body}</p>
+      )}
+      {canEdit && !editing && (
+        <div className="flex gap-3 pt-1">
+          {!confirm ? (
+            <>
+              <button onClick={() => setEditing(true)} className="text-xs text-gray-400 hover:text-blue-500">✏️ 編集</button>
+              <button onClick={() => setConfirm(true)} className="text-xs text-gray-400 hover:text-red-400">🗑️ 削除</button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-500 font-bold">削除しますか？</span>
+              <button onClick={handleDelete} disabled={saving}
+                className="text-xs font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">
+                {saving ? '…' : '削除'}
+              </button>
+              <button onClick={() => setConfirm(false)} className="text-xs text-gray-400">やめる</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -62,14 +114,18 @@ export default function CommentSection({ clientId, showToast }) {
     ])
 
     // admin_comments を変換
-    const messages = (acRes.data ?? []).map((c) => ({
-      type:      c.sender === 'admin' ? 'admin_message' : 'client_message',
-      sortKey:   c.created_at,
-      dateLabel: format(parseISO(c.created_at), 'yyyy/M/d (E)', { locale: ja }),
-      timeLabel: format(parseISO(c.created_at), 'HH:mm', { locale: ja }),
-      body:      c.body,
-      id:        `msg-${c.id}`,
-    }))
+    const messages = (acRes.data ?? [])
+      .filter(c => !c.is_deleted) // 削除済みは一覧に含めない（管理者側）
+      .map((c) => ({
+        type:      c.sender === 'admin' ? 'admin_message' : 'client_message',
+        sortKey:   c.created_at,
+        dateLabel: format(parseISO(c.created_at), 'yyyy/M/d (E)', { locale: ja }),
+        timeLabel: format(parseISO(c.created_at), 'HH:mm', { locale: ja }),
+        body:      c.body,
+        id:        `msg-${c.id}`,
+        rawId:     c.id,        // 編集・削除用
+        edited:    !!c.edited_at,
+      }))
 
     // weight_logs.comment を変換（空文字は除外）
     const dailyComments = (wlRes.data ?? [])
@@ -92,6 +148,18 @@ export default function CommentSection({ clientId, showToast }) {
   }
 
   useEffect(() => { fetchAll() }, [clientId])
+
+  async function handleEditMsg(rawId, newBody) {
+    await supabase.from('admin_comments')
+      .update({ body: newBody, edited_at: new Date().toISOString() })
+      .eq('id', rawId)
+    fetchAll()
+  }
+
+  async function handleDeleteMsg(rawId) {
+    await supabase.from('admin_comments').update({ is_deleted: true }).eq('id', rawId)
+    fetchAll()
+  }
 
   async function handleSend() {
     const body = text.trim()
@@ -149,7 +217,12 @@ export default function CommentSection({ clientId, showToast }) {
             <p className="text-sm">コメントはまだありません</p>
           </div>
         ) : (
-          items.map((item) => <CommentCard key={item.id} item={item} />)
+          items.map((item) => (
+            <CommentCard key={item.id} item={item}
+              onEdit={item.rawId ? handleEditMsg : null}
+              onDelete={item.rawId ? handleDeleteMsg : null}
+            />
+          ))
         )}
       </div>
 

@@ -106,6 +106,14 @@ export default function ClientTopPage() {
           記録の履歴・グラフを見る
         </Link>
 
+        {/* カレンダー */}
+        <Link
+          to={`/client/${id}/calendar`}
+          className="block w-full bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 text-center text-lg font-bold py-5 rounded-2xl shadow-sm border border-gray-200 transition-colors"
+        >
+          📅 カレンダーから過去の記録を見る
+        </Link>
+
         {/* 先生からのメッセージ */}
         <Link
           to={`/client/${id}/comments`}
