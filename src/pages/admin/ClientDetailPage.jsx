@@ -120,6 +120,12 @@ export default function ClientDetailPage() {
     </div>
   )
 
+  // ── 他店舗用顧客番号（UUID末尾から生成、A-0001形式）────────
+  const clientCode = (() => {
+    const n = parseInt(id.replace(/-/g, '').slice(-6), 16) % 9999
+    return `A-${String(n + 1).padStart(4, '0')}`
+  })()
+
   // ── 集計値 ─────────────────────────────────────────────────
   const todayStr     = format(new Date(), 'yyyy-MM-dd')
   const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
@@ -213,15 +219,16 @@ export default function ClientDetailPage() {
         <div className="flex items-center gap-3">
           <Link to="/admin/clients" className="text-sm text-gray-400 hover:text-gray-600">←</Link>
           <div>
-            {/* 他店舗の場合は氏名をマスク */}
-            <h1 className="text-lg font-bold text-gray-800">
-              {isOtherStore ? '＊＊＊ 様（他店舗）' : client.name}
-            </h1>
-            {!isOtherStore && client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
-            {isOtherStore && (
-              <span className="text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
-                🔒 他店舗顧客
-              </span>
+            {isOtherStore ? (
+              <>
+                <p className="text-xs text-orange-600 font-medium">他店舗顧客</p>
+                <h1 className="text-lg font-bold text-gray-800">顧客番号：{clientCode}</h1>
+              </>
+            ) : (
+              <>
+                <h1 className="text-lg font-bold text-gray-800">{client.name}</h1>
+                {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
+              </>
             )}
           </div>
         </div>
@@ -271,9 +278,9 @@ export default function ClientDetailPage() {
           {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <p className="text-xs text-gray-400">氏名</p>
+              <p className="text-xs text-gray-400">{isOtherStore ? '顧客番号' : '氏名'}</p>
               {isOtherStore
-                ? <p className="font-semibold text-gray-300">＊＊＊ 様</p>
+                ? <p className="font-bold text-gray-800 text-lg">{clientCode}</p>
                 : <>
                     <p className="font-semibold text-gray-900">{client.name}</p>
                     {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
@@ -311,11 +318,6 @@ export default function ClientDetailPage() {
             <div className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-xl">
               <p className="text-xs font-bold text-blue-600 mb-1.5">目的・悩み</p>
               <p className="text-base font-bold text-gray-900 leading-relaxed">{client.memo}</p>
-            </div>
-          )}
-          {isOtherStore && (
-            <div className="mt-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-              🔒 氏名・連絡先・目的・悩みは他店舗顧客のため閲覧できません
             </div>
           )}
         </section>
@@ -401,43 +403,26 @@ export default function ClientDetailPage() {
         />
 
         {/* ══════════════════════════════════════════════
-            7. コメント（他店舗はロック）
+            7. コメント（他店舗はレンダリングしない）
         ══════════════════════════════════════════════ */}
-        <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">コメント</h2>
-          {isOtherStore ? (
-            <div className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 px-5 py-10 text-center">
-              <p className="text-3xl mb-2">🔒</p>
-              <p className="text-sm font-bold text-gray-400">他店舗顧客のため閲覧できません</p>
-              <p className="text-xs text-gray-300 mt-1">コメント・メッセージ履歴は所属店舗のみ閲覧可能です</p>
-            </div>
-          ) : (
-            <>
+        {!isOtherStore && (
+          <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">コメント</h2>
               {clientCommentCount > 0 && (
-                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200 inline-block mb-4">
+                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
                   お客さんから {clientCommentCount}件
                 </span>
               )}
-              <CommentSection clientId={id} showToast={showToast} />
-            </>
-          )}
-        </section>
+            </div>
+            <CommentSection clientId={id} showToast={showToast} />
+          </section>
+        )}
 
         {/* ══════════════════════════════════════════════
-            8. 体型写真（他店舗はロック）
+            8. 体型写真（他店舗はレンダリングしない）
         ══════════════════════════════════════════════ */}
-        {isOtherStore ? (
-          <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">体型写真</h2>
-            <div className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 px-5 py-10 text-center">
-              <p className="text-3xl mb-2">🔒</p>
-              <p className="text-sm font-bold text-gray-400">他店舗顧客のため閲覧できません</p>
-              <p className="text-xs text-gray-300 mt-1">体型写真は所属店舗のみ閲覧可能です</p>
-            </div>
-          </section>
-        ) : (
-          <BodyPhotoSection clientId={id} showToast={showToast} />
-        )}
+        {!isOtherStore && <BodyPhotoSection clientId={id} showToast={showToast} />}
 
       </main>
     </div>
