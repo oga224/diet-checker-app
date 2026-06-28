@@ -50,7 +50,14 @@ function entryDays(clientId, todayLogs, weightHistory) {
 }
 
 export default function ClientListPage() {
-  const { signOut } = useAuth()
+  const { signOut, profile } = useAuth()
+  const isSuperAdmin = profile?.is_super_admin === true
+
+  // 他店舗かどうかを判定
+  const isFromOtherStore = (c) => Boolean(
+    profile?.store_id && c.store_id &&
+    profile.store_id !== c.store_id && !isSuperAdmin
+  )
   const [clients,       setClients]       = useState([])
   const [todayLogs,     setTodayLogs]     = useState({})
   const [todayMeals,    setTodayMeals]    = useState({})
@@ -121,7 +128,23 @@ export default function ClientListPage() {
 
   async function handleCreate(payload) {
     setSubmitting(true)
-    const { error, data } = await supabase.from('clients').insert(payload).select().single()
+
+    // store_id を自動設定
+    const createPayload = { ...payload, store_id: profile?.store_id ?? null }
+
+    // 顧客番号を自動採番（store_id がある場合のみ）
+    if (profile?.store_id) {
+      const [storeRes, countRes] = await Promise.all([
+        supabase.from('stores').select('code').eq('id', profile.store_id).single(),
+        supabase.from('clients').select('*', { count: 'exact', head: true }).eq('store_id', profile.store_id),
+      ])
+      if (!storeRes.error && storeRes.data?.code) {
+        const nextNum = (countRes.count || 0) + 1
+        createPayload.customer_number = `${storeRes.data.code}-${String(nextNum).padStart(5, '0')}`
+      }
+    }
+
+    const { error, data } = await supabase.from('clients').insert(createPayload).select().single()
     setSubmitting(false)
     if (error) { showToast('error', `登録に失敗しました：${error.message}`) }
     else { setShowForm(false); showToast('success', `${data.name} さんを登録しました`); fetchAll() }
@@ -218,10 +241,15 @@ export default function ClientListPage() {
 
             <div className="grid gap-3">
               {sorted.map((c) => {
-                const wLog    = todayLogs[c.id]     ?? null
-                const mLog    = todayMeals[c.id]    ?? null
-                const hist    = weightHistory[c.id] ?? null
-                const commCnt = commentCounts[c.id] ?? 0
+                const wLog       = todayLogs[c.id]     ?? null
+                const mLog       = todayMeals[c.id]    ?? null
+                const hist       = weightHistory[c.id] ?? null
+                const commCnt    = commentCounts[c.id] ?? 0
+                const otherStore = isFromOtherStore(c)
+                // 他店舗の場合は顧客番号を表示
+                const displayName   = otherStore ? (c.customer_number || `ID-${c.id.slice(0,6)}`) : c.name
+                const displaySub    = otherStore ? '他店舗' : c.kana
+                const avatarLetter  = otherStore ? '#' : c.name.charAt(0)
 
                 // 最新スコア：今日のログがあればそれを使用、なければ最新ログ
                 const scoreLog  = wLog ?? hist?.latestLog ?? null
@@ -244,20 +272,20 @@ export default function ClientListPage() {
                     {/* 上段：名前 + バッジ群 */}
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
-                          {c.name.charAt(0)}
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${otherStore ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-700'}`}>
+                          {avatarLetter}
                         </div>
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-800 flex items-center gap-1.5 text-sm">
-                            {c.is_active !== false && <span className="text-red-500 text-xs">●</span>}
-                            {c.name}
+                            {!otherStore && c.is_active !== false && <span className="text-red-500 text-xs">●</span>}
+                            {displayName}
                           </p>
-                          {c.kana && <p className="text-xs text-gray-400">{c.kana}</p>}
+                          {displaySub && <p className={`text-xs ${otherStore ? 'text-orange-400' : 'text-gray-400'}`}>{displaySub}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* コメントバッジ */}
-                        {commCnt > 0 && (
+                        {/* コメントバッジ（他店舗は非表示） */}
+                        {!otherStore && commCnt > 0 && (
                           <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
                             コメント {commCnt}件
                           </span>

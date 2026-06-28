@@ -43,17 +43,21 @@ export default function ClientDetailPage() {
   const [selectedPhotoDate, setSelectedPhotoDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const mealPhotoRef = useRef(null)
 
-  const clientCommentCount = useClientCommentCount(id)
-  const { signOut, profile } = useAuth()
+  const clientCommentCount        = useClientCommentCount(id)
+  const { signOut, profile }      = useAuth()
+  const isSuperAdmin              = profile?.is_super_admin === true
+  const [anonymousMode, setAnonymousMode] = useState(false)
 
-  // 他店舗顧客かどうか（store_id が両方設定されていて異なる場合のみ制限）
-  // is_super_admin または store_id 未設定の場合は制限なし
+  // 他店舗スタッフが閲覧している場合（store_id が未設定なら制限なし）
   const isOtherStore = Boolean(
     profile?.store_id &&
     client?.store_id &&
     profile.store_id !== client.store_id &&
-    !profile.is_super_admin
+    !isSuperAdmin
   )
+
+  // 表示制限：他店舗スタッフ OR super_admin の匿名モード
+  const isRestricted = isOtherStore || (isSuperAdmin && anonymousMode)
 
   async function fetchData() {
     const [clientRes, logsRes, mealRes] = await Promise.all([
@@ -120,11 +124,8 @@ export default function ClientDetailPage() {
     </div>
   )
 
-  // ── 他店舗用顧客番号（UUID末尾から生成、A-0001形式）────────
-  const clientCode = (() => {
-    const n = parseInt(id.replace(/-/g, '').slice(-6), 16) % 9999
-    return `A-${String(n + 1).padStart(4, '0')}`
-  })()
+  // ── 顧客番号（DB の customer_number を使用、未設定時は短縮ID）──
+  const clientCode = client?.customer_number || `ID-${id.slice(0, 6).toUpperCase()}`
 
   // ── 集計値 ─────────────────────────────────────────────────
   const todayStr     = format(new Date(), 'yyyy-MM-dd')
@@ -219,14 +220,21 @@ export default function ClientDetailPage() {
         <div className="flex items-center gap-3">
           <Link to="/admin/clients" className="text-sm text-gray-400 hover:text-gray-600">←</Link>
           <div>
-            {isOtherStore ? (
+            {isRestricted ? (
               <>
-                <p className="text-xs text-orange-600 font-medium">他店舗顧客</p>
+                <p className="text-xs text-orange-600 font-medium">
+                  {isOtherStore ? '他店舗顧客' : '匿名モード（本部）'}
+                </p>
                 <h1 className="text-lg font-bold text-gray-800">顧客番号：{clientCode}</h1>
               </>
             ) : (
               <>
-                <h1 className="text-lg font-bold text-gray-800">{client.name}</h1>
+                <h1 className="text-lg font-bold text-gray-800">
+                  {client.name}
+                  {clientCode && (
+                    <span className="ml-2 text-xs font-normal text-gray-400">{clientCode}</span>
+                  )}
+                </h1>
                 {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
               </>
             )}
@@ -239,7 +247,19 @@ export default function ClientDetailPage() {
             className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             ＋ 記録を追加・編集
           </button>
-          {!isOtherStore && (
+          {/* super_admin: 匿名/実名切替 */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setAnonymousMode(v => !v)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors
+                ${anonymousMode
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-purple-600 border-purple-300 hover:bg-purple-50'}`}
+            >
+              {anonymousMode ? '🔒 匿名モード' : '👁️ 実名モード'}
+            </button>
+          )}
+          {!isRestricted && (
             <>
               <button onClick={() => setShowEdit(true)}
                 className="px-3 py-1.5 text-sm font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
@@ -278,7 +298,7 @@ export default function ClientDetailPage() {
           {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <p className="text-xs text-gray-400">{isOtherStore ? '顧客番号' : '氏名'}</p>
+              <p className="text-xs text-gray-400">{isRestricted ? '顧客番号' : '氏名'}</p>
               {isOtherStore
                 ? <p className="font-bold text-gray-800 text-lg">{clientCode}</p>
                 : <>
@@ -314,7 +334,7 @@ export default function ClientDetailPage() {
             </div>
           )}
           {/* 目的・悩み（他店舗の場合は非表示） */}
-          {!isOtherStore && client.memo && (
+          {!isRestricted && client.memo && (
             <div className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-xl">
               <p className="text-xs font-bold text-blue-600 mb-1.5">目的・悩み</p>
               <p className="text-base font-bold text-gray-900 leading-relaxed">{client.memo}</p>
@@ -405,7 +425,7 @@ export default function ClientDetailPage() {
         {/* ══════════════════════════════════════════════
             7. コメント（他店舗はレンダリングしない）
         ══════════════════════════════════════════════ */}
-        {!isOtherStore && (
+        {!isRestricted && (
           <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
             <div className="flex items-center gap-2 mb-4">
               <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">コメント</h2>
@@ -422,7 +442,7 @@ export default function ClientDetailPage() {
         {/* ══════════════════════════════════════════════
             8. 体型写真（他店舗はレンダリングしない）
         ══════════════════════════════════════════════ */}
-        {!isOtherStore && <BodyPhotoSection clientId={id} showToast={showToast} />}
+        {!isRestricted && <BodyPhotoSection clientId={id} showToast={showToast} />}
 
       </main>
     </div>
