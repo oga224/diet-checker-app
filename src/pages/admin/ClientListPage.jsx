@@ -265,10 +265,13 @@ export default function ClientListPage() {
                 const hist       = weightHistory[c.id] ?? null
                 const commCnt    = commentCounts[c.id] ?? 0
                 const otherStore = isFromOtherStore(c)
-                // 他店舗の場合は顧客番号を表示
-                const displayName   = otherStore ? (c.customer_number || `ID-${c.id.slice(0,6)}`) : c.name
-                const displaySub    = otherStore ? '他店舗' : c.kana
-                const avatarLetter  = otherStore ? '#' : c.name.charAt(0)
+                const cnum = c.customer_number || ''
+                // 同店舗: "A-00001 山田花子"、他店舗: "A-00001"
+                const displayName  = otherStore
+                  ? (cnum || `ID-${c.id.slice(0, 6)}`)
+                  : (cnum ? `${cnum} ${c.name}` : c.name)
+                const displaySub   = otherStore ? '他店舗' : c.kana
+                const avatarLetter = otherStore ? (cnum.slice(0, 1) || '#') : c.name.charAt(0)
 
                 // 最新スコア：今日のログがあればそれを使用、なければ最新ログ
                 const scoreLog  = wLog ?? hist?.latestLog ?? null
