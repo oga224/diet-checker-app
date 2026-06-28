@@ -50,14 +50,7 @@ function entryDays(clientId, todayLogs, weightHistory) {
 }
 
 export default function ClientListPage() {
-  const { signOut, profile } = useAuth()
-  const isSuperAdmin = profile?.is_super_admin === true
-
-  // 他店舗かどうかを判定
-  const isFromOtherStore = (c) => Boolean(
-    profile?.store_id && c.store_id &&
-    profile.store_id !== c.store_id && !isSuperAdmin
-  )
+  // ── useState を先に宣言（Reactのhooksルール）──
   const [clients,       setClients]       = useState([])
   const [todayLogs,     setTodayLogs]     = useState({})
   const [todayMeals,    setTodayMeals]    = useState({})
@@ -70,56 +63,82 @@ export default function ClientListPage() {
   const [toast,         setToast]         = useState(null)
 
   async function fetchAll() {
-    const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
-      supabase.from('clients').select('*').order('kana'),
-      supabase.from('weight_logs').select('*').eq('date', todayStr),
-      supabase.from('meal_logs')
-        .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
-        .eq('date', todayStr),
-      // 全体重ログ：start/latest体重・最終入力日の算出に使用
-      supabase.from('weight_logs')
-        .select('client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
-        .order('date', { ascending: true }),
-      // お客さんからのコメント件数
-      supabase.from('admin_comments').select('client_id').eq('sender', 'client'),
-    ])
+    try {
+      const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
+        supabase.from('clients').select('*').order('kana'),
+        supabase.from('weight_logs').select('*').eq('date', todayStr),
+        supabase.from('meal_logs')
+          .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
+          .eq('date', todayStr),
+        supabase.from('weight_logs')
+          .select('client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
+          .order('date', { ascending: true }),
+        // コメント件数（RLS エラーでも空配列として扱う）
+        supabase.from('admin_comments').select('client_id').eq('sender', 'client'),
+      ])
 
-    if (clientsRes.error) setError(clientsRes.error.message)
-    else setClients(clientsRes.data)
+      if (clientsRes.error) {
+        console.error('clients fetch error:', clientsRes.error)
+        setError(clientsRes.error.message)
+      } else {
+        setClients(clientsRes.data ?? [])
+      }
 
-    if (!logsRes.error && logsRes.data) {
-      const map = {}
-      logsRes.data.forEach((l) => { map[l.client_id] = l })
-      setTodayLogs(map)
+      if (!logsRes.error && logsRes.data) {
+        const map = {}
+        logsRes.data.forEach((l) => { map[l.client_id] = l })
+        setTodayLogs(map)
+      }
+      if (!mealsRes.error && mealsRes.data) {
+        const map = {}
+        mealsRes.data.forEach((m) => { map[m.client_id] = m })
+        setTodayMeals(map)
+      }
+      if (!wHistRes.error && wHistRes.data) {
+        const map = {}
+        wHistRes.data.forEach((l) => {
+          if (!map[l.client_id]) {
+            map[l.client_id] = { firstKg: null, latestKg: null, lastDate: null, latestLog: null }
+          }
+          const e = map[l.client_id]
+          if (l.morning_kg != null && !e.firstKg) e.firstKg = l.morning_kg
+          if (l.morning_kg != null) e.latestKg = l.morning_kg
+          e.lastDate  = l.date
+          e.latestLog = l
+        })
+        setWeightHistory(map)
+      }
+      // コメント件数（RLS エラーは無視して空として扱う）
+      if (!commentsRes.error && commentsRes.data) {
+        const map = {}
+        commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
+        setCommentCounts(map)
+      } else if (commentsRes.error) {
+        console.warn('admin_comments fetch (non-critical):', commentsRes.error.message)
+      }
+    } catch (err) {
+      console.error('fetchAll unexpected error:', err)
+      setError('データの取得中にエラーが発生しました')
+    } finally {
+      setLoading(false)  // 必ず loading を解除
     }
-    if (!mealsRes.error && mealsRes.data) {
-      const map = {}
-      mealsRes.data.forEach((m) => { map[m.client_id] = m })
-      setTodayMeals(map)
-    }
-    if (!wHistRes.error && wHistRes.data) {
-      const map = {}
-      wHistRes.data.forEach((l) => {
-        if (!map[l.client_id]) {
-          map[l.client_id] = { firstKg: null, latestKg: null, lastDate: null, latestLog: null }
-        }
-        const e = map[l.client_id]
-        if (l.morning_kg != null && !e.firstKg) e.firstKg = l.morning_kg
-        if (l.morning_kg != null) e.latestKg = l.morning_kg
-        e.lastDate  = l.date
-        e.latestLog = l
-      })
-      setWeightHistory(map)
-    }
-    if (!commentsRes.error && commentsRes.data) {
-      const map = {}
-      commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
-      setCommentCounts(map)
-    }
-    setLoading(false)
   }
 
   useEffect(() => { fetchAll() }, [])
+
+  // ── useAuth は useState / useEffect の後（hooks の順序維持）──
+  const { signOut, profile } = useAuth()
+  const isSuperAdmin = profile?.is_super_admin === true
+
+  // 他店舗かどうかを判定（store_id 未設定なら制限なし）
+  const isFromOtherStore = (c) => {
+    try {
+      return Boolean(
+        profile?.store_id && c?.store_id &&
+        profile.store_id !== c.store_id && !isSuperAdmin
+      )
+    } catch { return false }
+  }
 
   function showToast(type, msg) {
     setToast({ type, msg })
