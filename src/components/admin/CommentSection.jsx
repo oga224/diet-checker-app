@@ -15,10 +15,10 @@ function CommentCard({ item, onEdit, onDelete }) {
 
   async function handleSave() {
     if (!editText.trim()) return
-    setSaving(true); await onEdit(item.id, editText.trim()); setSaving(false); setEditing(false)
+    setSaving(true); await onEdit(item.rawId, editText.trim()); setSaving(false); setEditing(false)
   }
   async function handleDelete() {
-    setSaving(true); await onDelete(item.id); setSaving(false); setConfirm(false)
+    setSaving(true); await onDelete(item.rawId); setSaving(false); setConfirm(false)
   }
   const typeConfig = {
     daily: {
