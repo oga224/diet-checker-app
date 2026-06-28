@@ -1,34 +1,184 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
-import { format, parseISO, subDays } from 'date-fns'
+import { format, parseISO, subDays, getDaysInMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { supabase }     from '../../lib/supabase'
-import EvaluationCard   from '../../components/EvaluationCard'
+import { supabase }    from '../../lib/supabase'
+import EvaluationCard  from '../../components/EvaluationCard'
 
-// ── ミニグラフ（スマホ向け縦スタック） ───────────────────────
-function MiniChart({ data, dataKey, label, color, unit = '', yDomain }) {
-  if (!data.some(d => d[dataKey] != null)) return null
+// ── 月移動ヘルパー ─────────────────────────────────────────
+function addM(y, m, d) {
+  let nm = m + d, ny = y
+  if (nm > 12) { nm -= 12; ny++ }
+  if (nm < 1)  { nm += 12; ny-- }
+  return { year: ny, month: nm }
+}
+function pad(n) { return String(n).padStart(2, '0') }
+
+const DOW = ['日','月','火','水','木','金','土']
+
+// ── 表1の行定義（管理画面と同じルール） ─────────────────────
+const HEALTH_ROWS = [
+  { key: 'morning_kg', label: '朝体重',
+    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-900' } : { v: '', c: '' } },
+  { key: 'evening_kg', label: '夜体重',
+    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-900' } : { v: '', c: '' } },
+  { key: 'weight_diff', label: '朝→夜差',
+    cell: (w) => {
+      if (!w?.morning_kg || !w?.evening_kg) return { v: '', c: '' }
+      const d = +(w.evening_kg - w.morning_kg).toFixed(1)
+      return { v: `${d >= 0 ? '+' : ''}${d}`, c: d >= 0.6 ? 'text-red-500 font-bold' : 'text-green-600 font-bold' }
+    }},
+  { key: 'eating_out', label: '外食',
+    cell: (w) => {
+      const p = []
+      if (w?.ate_out_breakfast) p.push('M')
+      if (w?.ate_out_lunch)     p.push('L')
+      if (w?.ate_out_dinner)    p.push('D')
+      return p.length ? { v: p.join(''), c: 'text-orange-600 font-medium' } : { v: '', c: '' }
+    }},
+  { key: 'menstruation', label: '生理',
+    cell: (w) => w?.menstruation === true ? { v: '○', c: 'text-pink-500' } : { v: '', c: '' } },
+  { key: 'bowel', label: '排便',
+    cell: (w) => w?.bowel_movement === true ? { v: '○', c: 'text-gray-900' } : { v: '', c: '' } },
+  { key: 'water', label: '水分量',
+    cell: (w) => w?.water_ml != null
+      ? { v: `${(w.water_ml / 1000).toFixed(1)}L`, c: w.water_ml >= 1500 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      : { v: '', c: '' } },
+  { key: 'toilet', label: 'トイレ',
+    cell: (w) => w?.toilet_count != null
+      ? { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      : { v: '', c: '' } },
+  { key: 'sleep', label: '睡眠',
+    cell: (w) => w?.sleep_hours != null
+      ? { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      : { v: '', c: '' } },
+]
+
+// ── 患者向け体調・生活記録表 ─────────────────────────────────
+function PatientHealthTable({ clientId }) {
+  const navigate = useNavigate()
+  const now      = new Date()
+  const todayStr = format(now, 'yyyy-MM-dd')
+  const nowYM    = format(now, 'yyyy-MM')
+
+  const [year,  setYear]  = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [wMap,  setWMap]  = useState({})
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    async function fetchMonth() {
+      setLoading(true)
+      const mm  = pad(month)
+      const end = `${year}-${mm}-${pad(getDaysInMonth(new Date(year, month - 1)))}`
+      const { data } = await supabase.from('weight_logs').select('*')
+        .eq('client_id', clientId).gte('date', `${year}-${mm}-01`).lte('date', end)
+      const wm = {}; (data ?? []).forEach(l => { wm[l.date] = l })
+      setWMap(wm); setLoading(false)
+    }
+    fetchMonth()
+  }, [clientId, year, month])
+
+  const days  = Array.from({ length: getDaysInMonth(new Date(year, month - 1)) }, (_, i) => i + 1)
+  const curYM = `${year}-${pad(month)}`
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-      <p className="text-sm font-bold text-gray-600 mb-3">{label}</p>
-      <ResponsiveContainer width="100%" height={160}>
-        <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis domain={yDomain ?? ['auto', 'auto']} tick={{ fontSize: 10 }}
-            tickFormatter={(v) => `${v}${unit}`} width={36} />
-          <Tooltip formatter={(v) => `${v}${unit}`} />
-          <Line type="monotone" dataKey={dataKey} stroke={color}
-            strokeWidth={2.5} dot={{ r: 2 }} connectNulls />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* ヘッダー */}
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-sm font-bold text-gray-600">📋 体調・生活記録</h2>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => { const n = addM(year, month, -1); setYear(n.year); setMonth(n.month) }}
+            className="w-8 h-8 rounded-full border border-gray-200 text-lg flex items-center justify-center hover:bg-gray-50 active:scale-95">‹</button>
+          <span className="text-xs font-bold text-gray-700 w-16 text-center">{year}年{month}月</span>
+          <button onClick={() => { const n = addM(year, month, 1); setYear(n.year); setMonth(n.month) }}
+            disabled={curYM >= nowYM}
+            className="w-8 h-8 rounded-full border border-gray-200 text-lg flex items-center justify-center hover:bg-gray-50 active:scale-95 disabled:opacity-30">›</button>
+        </div>
+      </div>
+
+      {/* テーブル */}
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="border-collapse text-xs" style={{ minWidth: `${days.length * 48 + 64}px` }}>
+            <thead>
+              <tr>
+                {/* 左固定 */}
+                <th className="sticky left-0 z-20 bg-gray-50 text-left text-gray-400 font-medium
+                  px-2 py-2 border-r border-b border-gray-200 min-w-[4rem]">
+                  項目
+                </th>
+                {days.map(d => {
+                  const dateStr = `${year}-${pad(month)}-${pad(d)}`
+                  const isToday  = dateStr === todayStr
+                  const isFuture = dateStr > todayStr
+                  const dow = DOW[new Date(year, month - 1, d).getDay()]
+                  const isWE  = [0, 6].includes(new Date(year, month - 1, d).getDay())
+                  const hasDat = !!wMap[dateStr]
+                  return (
+                    <th key={d}
+                      onClick={() => { if (!isFuture) navigate(`/client/${clientId}/record/${dateStr}`) }}
+                      className={[
+                        'text-center px-0.5 py-1.5 border-b min-w-[3rem]',
+                        !isFuture ? 'cursor-pointer active:opacity-60' : '',
+                        isToday
+                          ? 'bg-yellow-200 border-b-2 border-b-yellow-500 text-yellow-800 font-bold'
+                          : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200',
+                        !isToday && isWE && !isFuture ? 'text-red-400' : '',
+                        !isToday && !isWE && !isFuture ? 'text-gray-700' : '',
+                        isFuture ? 'text-gray-200' : '',
+                      ].join(' ')}
+                    >
+                      <div className="font-medium text-xs leading-none">{d}</div>
+                      <div className={`text-[10px] leading-none mt-0.5 ${isToday ? 'text-yellow-600' : 'text-gray-400'}`}>{dow}</div>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {HEALTH_ROWS.map((row, ri) => (
+                <tr key={row.key} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}>
+                  <td className={`sticky left-0 z-10 px-2 py-2 text-xs font-medium text-gray-600
+                    border-r border-gray-200 whitespace-nowrap
+                    ${ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    {row.label}
+                  </td>
+                  {days.map(d => {
+                    const dateStr = `${year}-${pad(month)}-${pad(d)}`
+                    const isToday = dateStr === todayStr
+                    const { v, c } = row.cell(wMap[dateStr] ?? null)
+                    return (
+                      <td key={d} className={`text-center px-0.5 py-1.5 border-b border-gray-100 text-xs ${c} ${isToday ? 'bg-yellow-50' : ''}`}>
+                        {v}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 凡例 */}
+      <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-400 leading-relaxed">
+        <span className="text-red-500 font-medium">赤字</span>＝朝夜差+0.6kg以上・水分1.4L以下・トイレ9回以下・睡眠5時間以下
+        　<span className="text-green-600 font-medium">緑字</span>＝朝夜差+0.5kg以内
+        　日付をタップして編集できます
+      </div>
     </div>
   )
 }
 
+// ── メインコンポーネント ──────────────────────────────────────
 const PERIODS = [
   { key: 7,  label: '7日' },
   { key: 14, label: '14日' },
@@ -37,11 +187,11 @@ const PERIODS = [
 
 export default function ClientHistoryPage() {
   const { id } = useParams()
-  const [client, setClient]           = useState(null)
-  const [logs, setLogs]               = useState([])
-  const [mealLogMap, setMealLogMap]   = useState({})
-  const [loading, setLoading]         = useState(true)
-  const [period, setPeriod]           = useState(14)
+  const [client, setClient]       = useState(null)
+  const [logs, setLogs]           = useState([])
+  const [mealLogMap, setMealLogMap] = useState({})
+  const [loading, setLoading]     = useState(true)
+  const [period, setPeriod]       = useState(14)
 
   useEffect(() => {
     async function fetchData() {
@@ -56,8 +206,7 @@ export default function ClientHistoryPage() {
       if (!cr.error) setClient(cr.data)
       if (!lr.error) setLogs(lr.data ?? [])
       if (!mr.error && mr.data) {
-        const map = {}; mr.data.forEach(m => { map[m.date] = m })
-        setMealLogMap(map)
+        const map = {}; mr.data.forEach(m => { map[m.date] = m }); setMealLogMap(map)
       }
       setLoading(false)
     }
@@ -70,23 +219,15 @@ export default function ClientHistoryPage() {
     </div>
   )
 
-  // 期間フィルタ（昇順で並べ直す）
-  const cutoff    = format(subDays(new Date(), period), 'yyyy-MM-dd')
-  const filtered  = [...logs].reverse().filter(l => l.date >= cutoff)
-
-  // グラフデータ
+  // 期間フィルタ（グラフ用）
+  const cutoff   = format(subDays(new Date(), period), 'yyyy-MM-dd')
+  const filtered = [...logs].reverse().filter(l => l.date >= cutoff)
   const chartData = filtered.map(l => ({
-    date:   format(parseISO(l.date), 'M/d'),
-    朝体重:  l.morning_kg ?? undefined,
-    夜体重:  l.evening_kg ?? undefined,
-    朝夜差:  (l.morning_kg != null && l.evening_kg != null)
-             ? +(l.evening_kg - l.morning_kg).toFixed(1) : undefined,
-    水分量:  l.water_ml ?? undefined,
-    睡眠:   l.sleep_hours ?? undefined,
-    トイレ:  l.toilet_count ?? undefined,
+    date: format(parseISO(l.date), 'M/d'),
+    朝体重: l.morning_kg ?? undefined,
+    夜体重: l.evening_kg ?? undefined,
   }))
 
-  // サマリー
   const latestKg = logs.find(l => l.morning_kg != null)?.morning_kg
   const firstKg  = [...logs].reverse().find(l => l.morning_kg != null)?.morning_kg
   const diff     = (latestKg != null && firstKg != null) ? +(latestKg - firstKg).toFixed(1) : null
@@ -149,21 +290,19 @@ export default function ClientHistoryPage() {
           ))}
         </div>
 
-        {chartData.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center text-gray-300">
-            この期間の記録がありません
-          </div>
-        ) : (
-          <>
-            {/* 体重グラフ（朝・夜） */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-sm font-bold text-gray-600 mb-3">⚖️ 体重の推移</p>
+        {/* ⚖️ 体重グラフ（朝・夜のみ） */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-sm font-bold text-gray-600 mb-3">⚖️ 体重の推移</p>
+          {chartData.length === 0 ? (
+            <p className="text-center py-8 text-gray-300">この期間の記録がありません</p>
+          ) : (
+            <>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }}
-                    tickFormatter={v => `${v}`} width={36} />
+                    tickFormatter={v => `${v}`} width={38} />
                   <Tooltip formatter={v => `${v} kg`} />
                   {client?.goal_weight && (
                     <ReferenceLine y={client.goal_weight} stroke="#22c55e" strokeDasharray="4 3"
@@ -176,35 +315,23 @@ export default function ClientHistoryPage() {
               <div className="flex gap-4 justify-center mt-2 text-xs text-gray-400">
                 <span><span className="inline-block w-4 h-0.5 bg-blue-500 mr-1 align-middle" />朝</span>
                 <span><span className="inline-block w-4 h-0.5 bg-orange-400 mr-1 align-middle" />夜</span>
+                {client?.goal_weight && <span><span className="inline-block w-4 h-0.5 bg-green-500 mr-1 align-middle" />目標</span>}
               </div>
-            </div>
+            </>
+          )}
+        </div>
 
-            {/* 朝夜差 */}
-            <MiniChart data={chartData} dataKey="朝夜差" label="📊 朝→夜の差（体重増加）"
-              color="#8b5cf6" unit="kg" />
+        {/* 📋 体調・生活記録表（管理画面と同じ表1） */}
+        <PatientHealthTable clientId={id} />
 
-            {/* 水分量 */}
-            <MiniChart data={chartData} dataKey="水分量" label="💧 水分量の推移"
-              color="#06b6d4" unit="mL" />
-
-            {/* 睡眠 */}
-            <MiniChart data={chartData} dataKey="睡眠" label="😴 睡眠時間の推移"
-              color="#6366f1" unit="h" />
-
-            {/* トイレ */}
-            <MiniChart data={chartData} dataKey="トイレ" label="🚽 トイレ回数の推移"
-              color="#84cc16" unit="回" />
-          </>
-        )}
-
-        {/* 記録一覧 */}
+        {/* 記録一覧（最新5件） */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-sm font-bold text-gray-500 mb-4">記録一覧</p>
+          <p className="text-sm font-bold text-gray-500 mb-4">最近の記録</p>
           {logs.length === 0 ? (
             <p className="text-center py-8 text-gray-300">まだ記録がありません</p>
           ) : (
             <div className="space-y-5">
-              {logs.map((l, i) => {
+              {logs.slice(0, 10).map((l, i) => {
                 const prevKg  = logs[i + 1]?.morning_kg ?? null
                 const mealLog = mealLogMap[l.date] ?? null
                 return (
@@ -215,11 +342,15 @@ export default function ClientHistoryPage() {
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div className="bg-blue-50 rounded-xl px-3 py-2 text-center">
                         <p className="text-xs text-gray-400">朝</p>
-                        <p className="text-lg font-bold text-blue-600">{l.morning_kg != null ? `${l.morning_kg} kg` : '—'}</p>
+                        <p className="text-lg font-bold text-blue-600">
+                          {l.morning_kg != null ? `${l.morning_kg} kg` : '—'}
+                        </p>
                       </div>
                       <div className="bg-orange-50 rounded-xl px-3 py-2 text-center">
                         <p className="text-xs text-gray-400">夜</p>
-                        <p className="text-lg font-bold text-orange-500">{l.evening_kg != null ? `${l.evening_kg} kg` : '—'}</p>
+                        <p className="text-lg font-bold text-orange-500">
+                          {l.evening_kg != null ? `${l.evening_kg} kg` : '—'}
+                        </p>
                       </div>
                     </div>
                     {l.comment && (
