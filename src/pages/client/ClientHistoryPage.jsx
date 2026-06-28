@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -68,6 +68,11 @@ function PatientHealthTable({ clientId }) {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [wMap,  setWMap]  = useState({})
   const [loading, setLoading] = useState(false)
+  const scrollRef    = useRef(null)
+  const autoScrolled = useRef(false)
+
+  // 月変更でauto-scrollリセット
+  useEffect(() => { autoScrolled.current = false }, [year, month])
 
   useEffect(() => {
     async function fetchMonth() {
@@ -81,6 +86,21 @@ function PatientHealthTable({ clientId }) {
     }
     fetchMonth()
   }, [clientId, year, month])
+
+  // データ読み込み後に今日の列へ自動スクロール
+  useEffect(() => {
+    if (loading || autoScrolled.current) return
+    setTimeout(() => {
+      const ref = scrollRef.current
+      if (!ref) return
+      const todayEl = ref.querySelector('[data-today="true"]')
+      if (todayEl) {
+        const stickyWidth = 64 // min-w-[4rem]
+        ref.scrollLeft = Math.max(0, todayEl.offsetLeft - stickyWidth)
+      }
+      autoScrolled.current = true
+    }, 60)
+  }, [loading])
 
   const days  = Array.from({ length: getDaysInMonth(new Date(year, month - 1)) }, (_, i) => i + 1)
   const curYM = `${year}-${pad(month)}`
@@ -106,7 +126,7 @@ function PatientHealthTable({ clientId }) {
           <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" ref={scrollRef}>
           <table className="border-collapse text-xs" style={{ minWidth: `${days.length * 48 + 64}px` }}>
             <thead>
               <tr>
@@ -124,6 +144,7 @@ function PatientHealthTable({ clientId }) {
                   const hasDat = !!wMap[dateStr]
                   return (
                     <th key={d}
+                      data-today={isToday ? 'true' : undefined}
                       onClick={() => { if (!isFuture) navigate(`/client/${clientId}/record/${dateStr}`) }}
                       className={[
                         'text-center px-0.5 py-1.5 border-b min-w-[3rem]',

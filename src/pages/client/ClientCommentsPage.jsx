@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 
 function Message({ comment, onEdit, onDelete }) {
   const isAdmin   = comment.sender === 'admin' || !comment.sender
-  const isDeleted = comment.is_deleted === true
+  const isDeleted = false // ハードDELETEに変更したため不要
   const dateStr   = format(parseISO(comment.created_at), 'M月d日 (E) HH:mm', { locale: ja })
 
   const [editing,  setEditing]  = useState(false)
@@ -51,7 +51,7 @@ function Message({ comment, onEdit, onDelete }) {
             {isAdmin ? '先生' : 'あなた'}
           </span>
           <span className="text-xs text-gray-400">{dateStr}</span>
-          {comment.edited_at && <span className="text-xs text-gray-300">（編集済み）</span>}
+          {comment._edited && <span className="text-xs text-gray-300">（編集済み）</span>}
         </div>
 
         {editing ? (
@@ -168,21 +168,33 @@ export default function ClientCommentsPage() {
   }
 
   async function handleEdit(commentId, newBody) {
-    await supabase.from('admin_comments')
-      .update({ body: newBody, edited_at: new Date().toISOString() })
+    const { error } = await supabase.from('admin_comments')
+      .update({ body: newBody })
       .eq('id', commentId)
-    fetchData()
+    if (error) {
+      console.error('Edit error:', error)
+      setError(`編集できませんでした：${error.message}`)
+      return
+    }
+    // 画面を即時更新
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, body: newBody, _edited: true } : c))
   }
 
   async function handleDelete(commentId) {
-    await supabase.from('admin_comments')
-      .update({ is_deleted: true })
+    const { error } = await supabase.from('admin_comments')
+      .delete()
       .eq('id', commentId)
-    fetchData()
+    if (error) {
+      console.error('Delete error:', error)
+      setError(`削除できませんでした：${error.message}`)
+      return
+    }
+    // 画面から即時削除
+    setComments(prev => prev.filter(c => c.id !== commentId))
   }
 
-  const adminCount  = comments.filter(c => (c.sender === 'admin' || !c.sender) && !c.is_deleted).length
-  const clientCount = comments.filter(c => c.sender === 'client' && !c.is_deleted).length
+  const adminCount  = comments.filter(c => c.sender === 'admin' || !c.sender).length
+  const clientCount = comments.filter(c => c.sender === 'client').length
 
   return (
     <div className="min-h-screen bg-blue-50 flex flex-col">

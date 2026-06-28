@@ -114,18 +114,16 @@ export default function CommentSection({ clientId, showToast }) {
     ])
 
     // admin_comments を変換
-    const messages = (acRes.data ?? [])
-      .filter(c => !c.is_deleted) // 削除済みは一覧に含めない（管理者側）
-      .map((c) => ({
-        type:      c.sender === 'admin' ? 'admin_message' : 'client_message',
-        sortKey:   c.created_at,
-        dateLabel: format(parseISO(c.created_at), 'yyyy/M/d (E)', { locale: ja }),
-        timeLabel: format(parseISO(c.created_at), 'HH:mm', { locale: ja }),
-        body:      c.body,
-        id:        `msg-${c.id}`,
-        rawId:     c.id,        // 編集・削除用
-        edited:    !!c.edited_at,
-      }))
+    const messages = (acRes.data ?? []).map((c) => ({
+      type:      c.sender === 'admin' ? 'admin_message' : 'client_message',
+      sortKey:   c.created_at,
+      dateLabel: format(parseISO(c.created_at), 'yyyy/M/d (E)', { locale: ja }),
+      timeLabel: format(parseISO(c.created_at), 'HH:mm', { locale: ja }),
+      body:      c.body,
+      id:        `msg-${c.id}`,
+      rawId:     c.id,
+      edited:    false,
+    }))
 
     // weight_logs.comment を変換（空文字は除外）
     const dailyComments = (wlRes.data ?? [])
@@ -150,15 +148,31 @@ export default function CommentSection({ clientId, showToast }) {
   useEffect(() => { fetchAll() }, [clientId])
 
   async function handleEditMsg(rawId, newBody) {
-    await supabase.from('admin_comments')
-      .update({ body: newBody, edited_at: new Date().toISOString() })
+    const { error } = await supabase.from('admin_comments')
+      .update({ body: newBody })
       .eq('id', rawId)
-    fetchAll()
+    if (error) {
+      console.error('Edit error:', error)
+      showToast('error', `編集できませんでした：${error.message}`)
+      return
+    }
+    // 画面を即時更新
+    setItems(prev => prev.map(item =>
+      item.rawId === rawId ? { ...item, body: newBody, edited: true } : item
+    ))
   }
 
   async function handleDeleteMsg(rawId) {
-    await supabase.from('admin_comments').update({ is_deleted: true }).eq('id', rawId)
-    fetchAll()
+    const { error } = await supabase.from('admin_comments')
+      .delete()
+      .eq('id', rawId)
+    if (error) {
+      console.error('Delete error:', error)
+      showToast('error', `削除できませんでした：${error.message}`)
+      return
+    }
+    // 画面から即時削除
+    setItems(prev => prev.filter(item => item.rawId !== rawId))
   }
 
   async function handleSend() {
