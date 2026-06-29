@@ -5,6 +5,7 @@ import { ja } from 'date-fns/locale'
 import { supabase }    from '../../lib/supabase'
 import PhotoUpload     from '../../components/PhotoUpload'
 import EvaluationCard  from '../../components/EvaluationCard'
+import { isValidWeight, filterWeightInput, WEIGHT_ERROR_MSG } from '../../lib/weightValidator'
 
 // ─────────────────────────────────────────────────────────────
 // フォーム初期値
@@ -35,6 +36,14 @@ function SectionHeader({ emoji, label }) {
 // 体重入力（大きな数字）
 // ─────────────────────────────────────────────────────────────
 function WeightInput({ label, value, onChange }) {
+  const invalid = value !== '' && !isValidWeight(value)
+
+  function handleChange(raw) {
+    const filtered = filterWeightInput(raw)
+    if (filtered !== null) onChange(filtered)
+    // null の場合は state を更新しない（入力拒否）
+  }
+
   return (
     <div className="mb-5">
       <p className="text-base font-bold text-gray-600 mb-2">{label}</p>
@@ -44,12 +53,20 @@ function WeightInput({ label, value, onChange }) {
           inputMode="decimal"
           step="0.1" min="20" max="300"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => handleChange(e.target.value)}
           placeholder="--.-"
-          className="text-5xl font-black text-center text-gray-800 bg-gray-50 border-b-4 border-blue-300 focus:border-blue-500 outline-none flex-1 min-w-0 py-2 rounded-t-xl"
+          className={`text-5xl font-black text-center bg-gray-50 border-b-4 outline-none flex-1 min-w-0 py-2 rounded-t-xl
+            ${invalid
+              ? 'border-red-400 text-red-500 focus:border-red-500'
+              : 'border-blue-300 text-gray-800 focus:border-blue-500'}`}
         />
         <span className="text-2xl font-bold text-gray-400 mb-2 flex-shrink-0">kg</span>
       </div>
+      {invalid && (
+        <p className="text-sm text-red-500 mt-1.5 font-medium">
+          ⚠️ {WEIGHT_ERROR_MSG}
+        </p>
+      )}
     </div>
   )
 }
@@ -182,9 +199,18 @@ export default function ClientRecordPage() {
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })) }
   function setPhoto(key, url) { setPhotos((p) => ({ ...p, [key]: url })) }
 
-  // 保存処理（変更なし）
+  // 保存処理
   async function handleSubmit(e) {
     e.preventDefault()
+    // 体重バリデーション（二重チェック）
+    if (!isValidWeight(form.morning_kg)) {
+      setError(`朝の体重：${WEIGHT_ERROR_MSG}`)
+      return
+    }
+    if (!isValidWeight(form.evening_kg)) {
+      setError(`夜の体重：${WEIGHT_ERROR_MSG}`)
+      return
+    }
     setSaving(true); setError(null)
 
     const weightPayload = {

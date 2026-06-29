@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { isValidWeight, filterWeightInput, WEIGHT_ERROR_MSG } from '../../lib/weightValidator'
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-blue-400 transition'
 
@@ -89,9 +90,18 @@ export default function AdminRecordEditModal({ clientId, date, existingLog, onCl
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
   const inp = (key) => (e) => set(key, e.target.value)
 
+  // 体重専用の onChange（小数点1桁制限）
+  const weightInp = (key) => (e) => {
+    const filtered = filterWeightInput(e.target.value)
+    if (filtered !== null) set(key, filtered)
+  }
+
   async function handleSave(e) {
     e.preventDefault()
     if (!form.date) { setError('日付を入力してください'); return }
+    // 体重バリデーション（二重チェック）
+    if (!isValidWeight(form.morning_kg)) { setError(`朝体重：${WEIGHT_ERROR_MSG}`); return }
+    if (!isValidWeight(form.evening_kg)) { setError(`夜体重：${WEIGHT_ERROR_MSG}`); return }
     setSaving(true)
     setError(null)
 
@@ -163,12 +173,20 @@ export default function AdminRecordEditModal({ clientId, date, existingLog, onCl
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">体重</p>
             <div className="grid grid-cols-2 gap-4">
               <Field label="朝体重 (kg)">
-                <input type="number" step="0.1" min="20" max="300" className={inputCls}
-                  value={form.morning_kg} onChange={inp('morning_kg')} placeholder="--.-" />
+                <input type="number" inputMode="decimal" step="0.1" min="20" max="300"
+                  className={`${inputCls} ${form.morning_kg && !isValidWeight(form.morning_kg) ? 'border-red-300 focus:border-red-400' : ''}`}
+                  value={form.morning_kg} onChange={weightInp('morning_kg')} placeholder="--.-" />
+                {form.morning_kg && !isValidWeight(form.morning_kg) && (
+                  <p className="text-xs text-red-500 mt-1">小数点以下1桁まで（例：65.5）</p>
+                )}
               </Field>
               <Field label="夜体重 (kg)">
-                <input type="number" step="0.1" min="20" max="300" className={inputCls}
-                  value={form.evening_kg} onChange={inp('evening_kg')} placeholder="--.-" />
+                <input type="number" inputMode="decimal" step="0.1" min="20" max="300"
+                  className={`${inputCls} ${form.evening_kg && !isValidWeight(form.evening_kg) ? 'border-red-300 focus:border-red-400' : ''}`}
+                  value={form.evening_kg} onChange={weightInp('evening_kg')} placeholder="--.-" />
+                {form.evening_kg && !isValidWeight(form.evening_kg) && (
+                  <p className="text-xs text-red-500 mt-1">小数点以下1桁まで（例：65.5）</p>
+                )}
               </Field>
             </div>
           </div>
