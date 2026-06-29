@@ -54,13 +54,16 @@ export default function ClientListPage() {
   const [clients,       setClients]       = useState([])
   const [todayLogs,     setTodayLogs]     = useState({})
   const [todayMeals,    setTodayMeals]    = useState({})
-  const [weightHistory, setWeightHistory] = useState({}) // client_id → { firstKg, latestKg, lastDate, latestLog }
-  const [commentCounts, setCommentCounts] = useState({}) // client_id → count
+  const [weightHistory, setWeightHistory] = useState({})
+  const [commentCounts, setCommentCounts] = useState({})
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState(null)
   const [showForm,      setShowForm]      = useState(false)
   const [submitting,    setSubmitting]    = useState(false)
   const [toast,         setToast]         = useState(null)
+  const [stores,        setStores]        = useState([])             // 全店舗リスト
+  const [selectedStoreId, setSelectedStoreId] = useState(null)      // null=全店舗
+  const [storeFilterReady, setStoreFilterReady] = useState(false)   // 初期化完了フラグ
 
   async function fetchAll() {
     try {
@@ -126,9 +129,23 @@ export default function ClientListPage() {
 
   useEffect(() => { fetchAll() }, [])
 
+  // 店舗リストを取得（一度だけ）
+  useEffect(() => {
+    supabase.from('stores').select('id, name, code').order('name')
+      .then(({ data }) => { if (data) setStores(data) })
+  }, [])
+
   // ── useAuth は useState / useEffect の後（hooks の順序維持）──
   const { signOut, profile } = useAuth()
   const isSuperAdmin = profile?.is_super_admin === true
+
+  // プロフィール読み込み後に自店舗をデフォルトフィルタとして設定（一度だけ）
+  useEffect(() => {
+    if (!storeFilterReady && profile !== null) {
+      setSelectedStoreId(profile?.store_id || null)
+      setStoreFilterReady(true)
+    }
+  }, [profile, storeFilterReady])
 
   // 他店舗かどうかを判定（store_id 未設定なら制限なし）
   const isFromOtherStore = (c) => {
@@ -139,6 +156,11 @@ export default function ClientListPage() {
       )
     } catch { return false }
   }
+
+  // 選択店舗でフィルタ
+  const filteredClients = selectedStoreId === null
+    ? clients                                                  // 全店舗
+    : clients.filter(c => c.store_id === selectedStoreId)     // 特定店舗のみ
 
   function showToast(type, msg) {
     setToast({ type, msg })
@@ -170,7 +192,7 @@ export default function ClientListPage() {
   }
 
   // ── ソート：未入力日数が多い順 → 今日入力済みはスコア低い順 → 終了者は末尾 ──
-  const sorted = [...clients].sort((a, b) => {
+  const sorted = [...filteredClients].sort((a, b) => {
     const aActive = a.is_active !== false
     const bActive = b.is_active !== false
     if (aActive !== bActive) return aActive ? -1 : 1
@@ -186,8 +208,8 @@ export default function ClientListPage() {
     return 0
   })
 
-  const inputtedCount = clients.filter((c) => todayLogs[c.id]).length
-  const notInputted   = clients.length - inputtedCount
+  const inputtedCount = filteredClients.filter((c) => todayLogs[c.id]).length
+  const notInputted   = filteredClients.length - inputtedCount
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -244,12 +266,42 @@ export default function ClientListPage() {
           </div>
         ) : (
           <>
+            {/* 店舗フィルターバー */}
+            {stores.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 mb-4 flex-nowrap">
+                {stores.map(s => {
+                  const isOwn     = s.id === profile?.store_id
+                  const isSelected = selectedStoreId === s.id
+                  return (
+                    <button key={s.id}
+                      onClick={() => setSelectedStoreId(s.id)}
+                      className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-full border transition-colors whitespace-nowrap
+                        ${isSelected
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    >
+                      {isOwn ? `⭐ ${s.name}（自店舗）` : s.name}
+                    </button>
+                  )
+                })}
+                <button
+                  onClick={() => setSelectedStoreId(null)}
+                  className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-full border transition-colors whitespace-nowrap
+                    ${selectedStoreId === null
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  🌐 全店舗
+                </button>
+              </div>
+            )}
+
             {/* サマリーバー */}
             <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
               <p className="text-sm text-gray-500">
                 今日（{format(new Date(), 'M月d日')}）の入力：
                 <span className="font-bold text-blue-600 ml-1">{inputtedCount}人</span>
-                <span className="text-gray-400"> / {clients.length}人入力済</span>
+                <span className="text-gray-400"> / {filteredClients.length}人入力済</span>
               </p>
               {notInputted > 0 && (
                 <span className="text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
@@ -266,12 +318,15 @@ export default function ClientListPage() {
                 const commCnt    = commentCounts[c.id] ?? 0
                 const otherStore = isFromOtherStore(c)
                 const cnum = c.customer_number || ''
-                // 同店舗: "A-00001 山田花子"、他店舗: "A-00001"
+                // 他店舗: 顧客番号 + 店舗名。自店舗: 顧客番号 + 氏名
+                const clientStore = stores.find(s => s.id === c.store_id)
                 const displayName  = otherStore
                   ? (cnum || `ID-${c.id.slice(0, 6)}`)
                   : (cnum ? `${cnum} ${c.name}` : c.name)
-                const displaySub   = otherStore ? '他店舗' : c.kana
-                const avatarLetter = otherStore ? (cnum.slice(0, 1) || '#') : c.name.charAt(0)
+                const displaySub   = otherStore
+                  ? (clientStore ? clientStore.name : '他店舗')
+                  : c.kana
+                const avatarLetter = otherStore ? (cnum.slice(0, 1) || '#') : (c.name?.charAt(0) || '?')
 
                 // 最新スコア：今日のログがあればそれを使用、なければ最新ログ
                 const scoreLog  = wLog ?? hist?.latestLog ?? null
