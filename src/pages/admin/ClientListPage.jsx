@@ -285,35 +285,58 @@ export default function ClientListPage() {
           </div>
         ) : (
           <>
-            {/* 店舗フィルターバー */}
-            {stores.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 mb-4 flex-nowrap">
-                {stores.map(s => {
-                  const isOwn     = s.id === profile?.store_id
-                  const isSelected = selectedStoreId === s.id
-                  return (
-                    <button key={s.id}
-                      onClick={() => setSelectedStoreId(s.id)}
-                      className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-full border transition-colors whitespace-nowrap
-                        ${isSelected
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+            {/* ── 店舗フィルター（グループ表示） ── */}
+            {stores.length > 0 && (() => {
+              const ownStore   = stores.find(s => s.id === profile?.store_id)
+              const otherStores = stores.filter(s => s.id !== profile?.store_id)
+              const btnCls = (active) =>
+                `px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors whitespace-nowrap
+                 ${active
+                   ? 'bg-blue-600 text-white border-blue-600'
+                   : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`
+              return (
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 mb-4 space-y-2">
+                  {/* 自店舗 */}
+                  {ownStore && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-400 w-20 flex-shrink-0">自店舗</span>
+                      <button
+                        onClick={() => setSelectedStoreId(ownStore.id)}
+                        className={btnCls(selectedStoreId === ownStore.id)}
+                      >
+                        {ownStore.name}
+                      </button>
+                    </div>
+                  )}
+                  {/* 他店舗閲覧 */}
+                  {otherStores.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-gray-400 w-20 flex-shrink-0">他店舗閲覧</span>
+                      <div className="flex gap-2 flex-wrap">
+                        {otherStores.map(s => (
+                          <button key={s.id}
+                            onClick={() => setSelectedStoreId(s.id)}
+                            className={btnCls(selectedStoreId === s.id)}
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* 全店舗 */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-400 w-20 flex-shrink-0">全体</span>
+                    <button
+                      onClick={() => setSelectedStoreId(null)}
+                      className={btnCls(selectedStoreId === null)}
                     >
-                      {isOwn ? `⭐ ${s.name}（自店舗）` : s.name}
+                      全店舗
                     </button>
-                  )
-                })}
-                <button
-                  onClick={() => setSelectedStoreId(null)}
-                  className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-full border transition-colors whitespace-nowrap
-                    ${selectedStoreId === null
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                >
-                  🌐 全店舗
-                </button>
-              </div>
-            )}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* サマリーバー */}
             <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
