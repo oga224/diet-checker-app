@@ -91,7 +91,7 @@ function CommentCard({ item, onEdit, onDelete }) {
   )
 }
 
-export default function CommentSection({ clientId, showToast }) {
+export default function CommentSection({ clientId, showToast, isRestricted = false }) {
   const [items,   setItems]   = useState([])   // マージ済み一覧
   const [text,    setText]    = useState('')
   const [sending, setSending] = useState(false)
@@ -176,6 +176,7 @@ export default function CommentSection({ clientId, showToast }) {
   }
 
   async function handleSend() {
+    if (isRestricted) { showToast('error', '他店舗顧客のためコメントを送信できません'); return }
     const body = text.trim()
     if (!body) return
     setSending(true)
@@ -240,8 +241,11 @@ export default function CommentSection({ clientId, showToast }) {
         )}
       </div>
 
-      {/* ── 管理者コメント入力 ── */}
-      <div className="border-t border-gray-100 pt-4 flex gap-3 items-end">
+      {/* ── 管理者コメント入力（他店舗は非表示） ── */}
+      {isRestricted && (
+        <p className="text-xs text-gray-400 text-center py-2">他店舗顧客のためコメント送信はできません</p>
+      )}
+      <div className={`border-t border-gray-100 pt-4 flex gap-3 items-end ${isRestricted ? 'hidden' : ''}`}>
         <textarea
           ref={textareaRef}
           value={text}

@@ -90,6 +90,7 @@ export default function ClientDetailPage() {
   }
 
   async function handleUpdate(payload) {
+    if (isRestricted) { showToast('error', '他店舗顧客のため編集できません'); return }
     setSubmitting(true)
     const { error } = await supabase.from('clients').update(payload).eq('id', id)
     setSubmitting(false)
@@ -98,6 +99,7 @@ export default function ClientDetailPage() {
   }
 
   async function handleDelete() {
+    if (isRestricted) { showToast('error', '他店舗顧客のため削除できません'); return }
     setSubmitting(true)
     const { error } = await supabase.from('clients').delete().eq('id', id)
     setSubmitting(false)
@@ -159,8 +161,8 @@ export default function ClientDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ── 記録編集モーダル ── */}
-      {editModal && (
+      {/* ── 記録編集モーダル（isRestricted の場合は開かない） ── */}
+      {editModal && !isRestricted && (
         <AdminRecordEditModal
           clientId={id}
           date={editModal.date}
@@ -241,12 +243,14 @@ export default function ClientDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* 他店舗の場合は記録追加のみ許可、個人情報編集・削除は非表示 */}
-          <button
-            onClick={() => setEditModal({ date: format(new Date(), 'yyyy-MM-dd'), log: todayLog })}
-            className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            ＋ 記録を追加・編集
-          </button>
+          {/* 自店舗のみ記録追加・編集を許可 */}
+          {!isRestricted && (
+            <button
+              onClick={() => setEditModal({ date: format(new Date(), 'yyyy-MM-dd'), log: todayLog })}
+              className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              ＋ 記録を追加・編集
+            </button>
+          )}
           {/* super_admin: 匿名/実名切替 */}
           {isSuperAdmin && (
             <button
@@ -435,7 +439,7 @@ export default function ClientDetailPage() {
                 </span>
               )}
             </div>
-            <CommentSection clientId={id} showToast={showToast} />
+            <CommentSection clientId={id} showToast={showToast} isRestricted={isRestricted} />
           </section>
         )}
 
