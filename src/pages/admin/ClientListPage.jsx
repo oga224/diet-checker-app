@@ -167,11 +167,27 @@ export default function ClientListPage() {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // 自店舗かどうかの確認（新規登録ボタン表示・保存処理の両方で使用）
+  const canRegister = Boolean(
+    profile?.store_id &&
+    selectedStoreId === profile.store_id
+  )
+
   async function handleCreate(payload) {
+    // 安全対策：自店舗以外への登録を禁止
+    if (!profile?.store_id) {
+      showToast('error', '店舗が設定されていないため登録できません')
+      return
+    }
+    if (selectedStoreId !== profile.store_id) {
+      showToast('error', '自店舗以外への新規登録はできません')
+      return
+    }
+
     setSubmitting(true)
 
-    // store_id を自動設定
-    const createPayload = { ...payload, store_id: profile?.store_id ?? null }
+    // store_id は必ず自分の店舗（selectedStoreId は使わない）
+    const createPayload = { ...payload, store_id: profile.store_id }
 
     // 顧客番号を自動採番（store_id がある場合のみ）
     if (profile?.store_id) {
@@ -226,10 +242,13 @@ export default function ClientListPage() {
           <p className="text-sm text-gray-500 mt-0.5">整骨院体重管理システム</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setShowForm(true)}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            ＋ 新規登録
-          </button>
+          {/* 自店舗表示中のみ新規登録ボタンを表示 */}
+          {canRegister && (
+            <button onClick={() => setShowForm(true)}
+              className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              ＋ 新規登録
+            </button>
+          )}
           <Link to="/" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
             ← チェッカー
           </Link>
