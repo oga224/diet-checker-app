@@ -79,7 +79,7 @@ function buildInitial(date, log) {
     // 新規追加時のみ：スタッフが入力しやすいよう、よく使う値をデフォルト選択
     return {
       date, morning_kg: '', evening_kg: '',
-      water_ml: '1500', toilet_count: '6', sleep_hours: '0',
+      water_ml: '', toilet_count: '', sleep_hours: '',
       bowel_movement: true, menstruation: false,
       ate_breakfast: true, ate_lunch: true, ate_dinner: true, ate_snack: false,
       ate_out_breakfast: false, ate_out_lunch: false, ate_out_dinner: false,
