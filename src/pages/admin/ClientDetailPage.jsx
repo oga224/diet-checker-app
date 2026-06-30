@@ -15,6 +15,9 @@ import EvaluationCard   from '../../components/EvaluationCard'
 import { useAuth }               from '../../contexts/AuthContext'
 import AdminRecordEditModal      from '../../components/admin/AdminRecordEditModal'
 import DailyMealPhotos           from '../../components/admin/DailyMealPhotos'
+import { birthdateToPassword }   from '../../lib/patientAuth'
+
+const LOGIN_URL = typeof window !== 'undefined' ? `${window.location.origin}/login` : ''
 
 const PERIODS = [
   { key: '1w',  label: '1週間',  days: 7   },
@@ -43,6 +46,10 @@ export default function ClientDetailPage() {
   const [selectedPhotoDate, setSelectedPhotoDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [resettingPw, setResettingPw] = useState(false)
   const [pwResetResult, setPwResetResult] = useState(null)
+  const [hasPatientAccount, setHasPatientAccount] = useState(null) // null=未確認
+  const [issuingAccount, setIssuingAccount] = useState(false)
+  const [issuedCredentials, setIssuedCredentials] = useState(null) // {login_id, password}
+  const [showInitialPw, setShowInitialPw] = useState(false)
   const mealPhotoRef = useRef(null)
 
   const clientCommentCount        = useClientCommentCount(id)
@@ -79,6 +86,14 @@ export default function ClientDetailPage() {
       setMealLogMap(mm)
     }
     setLoading(false)
+
+    // 患者ログインアカウントの有無を確認
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', id)
+      .eq('role', 'client')
+    setHasPatientAccount((count ?? 0) > 0)
   }
 
   useEffect(() => { fetchData() }, [id])
@@ -111,7 +126,7 @@ export default function ClientDetailPage() {
 
   async function handleResetPassword() {
     if (isRestricted) { showToast('error', '他店舗顧客のため操作できません'); return }
-    if (!client?.birthdate) { showToast('error', '生年月日が未登録です。編集から登録してください'); return }
+    if (!client?.birthdate) { showToast('error', '生年月日が未登録のため初期化できません'); return }
     setResettingPw(true)
     const { data, error } = await supabase.functions.invoke('reset-patient-password', {
       body: { client_id: id },
@@ -121,6 +136,29 @@ export default function ClientDetailPage() {
       showToast('error', `初期化失敗：${data?.error || error.message}`)
     } else {
       setPwResetResult(data.password)
+    }
+  }
+
+  // 既存患者へのログインアカウント発行（生年月日登録済が条件）
+  async function handleIssueAccount() {
+    if (isRestricted) { showToast('error', '他店舗顧客のため操作できません'); return }
+    if (!client?.birthdate) { showToast('error', '生年月日が未登録のため発行できません'); return }
+    if (!client?.customer_number) { showToast('error', '顧客番号が未発行です'); return }
+    setIssuingAccount(true)
+    const { data, error } = await supabase.functions.invoke('create-patient-user', {
+      body: {
+        client_id: id,
+        customer_number: client.customer_number,
+        birthdate: client.birthdate,
+        store_id: client.store_id,
+      },
+    })
+    setIssuingAccount(false)
+    if (error || data?.error) {
+      showToast('error', `発行失敗：${data?.error || error.message}`)
+    } else {
+      setIssuedCredentials(data)
+      setHasPatientAccount(true)
     }
   }
 
@@ -193,6 +231,49 @@ export default function ClientDetailPage() {
               className="w-full mt-5 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors">
               閉じる
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 患者ログインアカウント発行結果モーダル */}
+      {issuedCredentials && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="text-center mb-4">
+              <p className="text-3xl mb-2">✅</p>
+              <h2 className="text-lg font-bold text-gray-800">患者ログイン情報</h2>
+              <p className="text-xs text-gray-400 mt-1">この情報を患者様へお渡しください</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 space-y-3">
+              <div>
+                <p className="text-xs text-blue-600 font-bold">ログインURL</p>
+                <p className="text-sm font-medium text-gray-800 break-all">{LOGIN_URL}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-bold">ログインID</p>
+                <p className="text-2xl font-black text-gray-800">{issuedCredentials.login_id}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-bold">初期パスワード</p>
+                <p className="text-2xl font-black text-gray-800">{issuedCredentials.password}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(
+                    `ログインURL\n${LOGIN_URL}\n\nログインID\n${issuedCredentials.login_id}\n\n初期パスワード\n${issuedCredentials.password}`
+                  )
+                  showToast('success', 'コピーしました')
+                }}
+                className="flex-1 bg-white border border-blue-300 text-blue-600 font-bold py-3 rounded-xl hover:bg-blue-50 transition-colors">
+                コピー
+              </button>
+              <button onClick={() => setIssuedCredentials(null)}
+                className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors">
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -368,6 +449,13 @@ export default function ClientDetailPage() {
                 <p className="font-medium text-gray-800">{client.goal_weight} kg</p>
               </div>
             )}
+            {/* 生年月日：自店舗 or super_admin実名のみ表示 */}
+            {!isRestricted && client.birthdate && (
+              <div>
+                <p className="text-xs text-gray-400">生年月日</p>
+                <p className="font-medium text-gray-800">{client.birthdate}</p>
+              </div>
+            )}
           </div>
           {/* 現在体重（最新記録から） */}
           {currentKg != null && (
@@ -384,6 +472,59 @@ export default function ClientDetailPage() {
             </div>
           )}
         </section>
+
+        {/* ══════════════════════════════════════════════
+            患者ログイン情報（自店舗のみ）
+        ══════════════════════════════════════════════ */}
+        {!isRestricted && (
+          <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">患者ログイン情報</h2>
+
+            {hasPatientAccount === null ? (
+              <p className="text-sm text-gray-400">確認中…</p>
+            ) : hasPatientAccount ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-gray-400">ログインURL</p>
+                  <p className="text-sm font-medium text-gray-700 break-all">{LOGIN_URL}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">ログインID</p>
+                  <p className="text-lg font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
+                </div>
+
+                {showInitialPw ? (
+                  <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
+                    <p className="text-xs text-purple-600 font-bold">初期パスワード（誕生日8桁）</p>
+                    <p className="text-xl font-black text-gray-800">
+                      {client.birthdate ? birthdateToPassword(client.birthdate) : '生年月日未登録'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      ※患者がパスワードを変更している場合、現在のパスワードとは異なります
+                    </p>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowInitialPw(true)}
+                    className="px-4 py-2 text-sm font-medium border border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors">
+                    ログイン情報表示
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-500 mb-3">患者ログインアカウントが未発行です。</p>
+                {!client.birthdate ? (
+                  <p className="text-sm text-orange-500">生年月日を登録すると発行できます（「編集」から登録）</p>
+                ) : (
+                  <button onClick={handleIssueAccount} disabled={issuingAccount}
+                    className="px-4 py-2.5 text-sm font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {issuingAccount ? '発行中…' : '患者ログインアカウント発行'}
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ══════════════════════════════════════════════
             2. 昨日の健康スコア

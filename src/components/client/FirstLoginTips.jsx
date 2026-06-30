@@ -35,18 +35,17 @@ export default function FirstLoginTips({ clientId, profile }) {
   return (
     <div className="space-y-3 mb-4">
       {showPasswordTip && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-          <span className="text-xl flex-shrink-0">🔒</span>
-          <div className="flex-1">
-            <p className="text-sm text-yellow-800 font-medium">
-              セキュリティ向上のため、パスワード変更をおすすめします
-            </p>
-            <Link to={`/client/${clientId}/password`}
-              className="text-xs text-yellow-700 underline mt-1 inline-block">
-              パスワードを変更する
-            </Link>
-          </div>
-          <button onClick={() => setShowPasswordTip(false)} className="text-yellow-400 text-sm">✕</button>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-3 relative">
+          <button onClick={() => setShowPasswordTip(false)}
+            className="absolute top-3 right-3 text-yellow-400 text-sm">✕</button>
+          <p className="text-sm text-yellow-800 font-bold pr-6">初期パスワードでログインしています</p>
+          <p className="text-xs text-yellow-700 mt-1 leading-relaxed">
+            セキュリティ向上のため、パスワード変更を推奨します。
+          </p>
+          <Link to={`/client/${clientId}/password`}
+            className="inline-block mt-2 bg-yellow-500 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors">
+            パスワード変更
+          </Link>
         </div>
       )}
 

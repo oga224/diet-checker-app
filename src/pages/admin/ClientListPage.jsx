@@ -279,6 +279,10 @@ export default function ClientListPage() {
             </div>
             <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 space-y-3">
               <div>
+                <p className="text-xs text-blue-600 font-bold">ログインURL</p>
+                <p className="text-sm font-medium text-gray-800 break-all">{window.location.origin}/login</p>
+              </div>
+              <div>
                 <p className="text-xs text-blue-600 font-bold">ログインID</p>
                 <p className="text-2xl font-black text-gray-800">{createdCredentials.login_id}</p>
               </div>
@@ -287,12 +291,26 @@ export default function ClientListPage() {
                 <p className="text-2xl font-black text-gray-800">{createdCredentials.password}</p>
               </div>
             </div>
-            <button
-              onClick={() => setCreatedCredentials(null)}
-              className="w-full mt-5 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors"
-            >
-              閉じる
-            </button>
+            <p className="text-xs text-gray-400 mt-3 text-center">この情報を患者様へお渡しください</p>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(
+                    `ログインURL\n${window.location.origin}/login\n\nログインID\n${createdCredentials.login_id}\n\n初期パスワード\n${createdCredentials.password}`
+                  )
+                  showToast('success', 'コピーしました')
+                }}
+                className="flex-1 bg-white border border-blue-300 text-blue-600 font-bold py-3 rounded-xl hover:bg-blue-50 transition-colors"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setCreatedCredentials(null)}
+                className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}

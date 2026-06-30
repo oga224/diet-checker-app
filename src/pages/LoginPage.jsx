@@ -120,6 +120,9 @@ export default function LoginPage() {
         <p className="text-center text-xs text-gray-400 mt-6">
           アカウントをお持ちでない方は管理者にお問い合わせください
         </p>
+        <p className="text-center text-xs text-gray-400 mt-2">
+          パスワードを忘れた方は<br />店舗スタッフへご相談ください
+        </p>
       </div>
     </div>
   )

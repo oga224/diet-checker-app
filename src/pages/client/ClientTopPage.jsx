@@ -68,7 +68,10 @@ export default function ClientTopPage() {
           <p className="text-blue-200 text-sm mt-1">目標：{client.goal_weight} kg</p>
         )}
         {client?.customer_number && (
-          <p className="text-blue-200 text-xs mt-1">ログインID：{client.customer_number}</p>
+          <div className="mt-2 inline-block bg-blue-700/40 rounded-lg px-3 py-1.5">
+            <p className="text-blue-200 text-[10px]">あなたのログインID</p>
+            <p className="text-white text-sm font-bold tracking-wide">{client.customer_number}</p>
+          </div>
         )}
       </header>
 
