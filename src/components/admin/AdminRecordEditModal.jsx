@@ -32,6 +32,38 @@ function TriState({ value, onChange, labels }) {
   )
 }
 
+// ── 食べた / 食べてない / 外食 / 未入力 の4値ボタン ───────────
+// ate_X（食べたか）と ate_out_X（外食か）の2フィールドを1つのUIで操作する
+function MealQuad({ eaten, ateOut, onChange }) {
+  const selected = eaten === true && ateOut ? 'out'
+    : eaten === true ? 'eaten'
+    : eaten === false ? 'not'
+    : 'unset'
+
+  const opts = [
+    { key: 'eaten', label: '食べた',   eaten: true,  ateOut: false, active: 'bg-blue-600 text-white border-blue-600' },
+    { key: 'not',   label: '食べてない', eaten: false, ateOut: false, active: 'bg-gray-500 text-white border-gray-500' },
+    { key: 'out',   label: '外食',     eaten: true,  ateOut: true,  active: 'bg-orange-500 text-white border-orange-500' },
+    { key: 'unset', label: '未入力',   eaten: null,  ateOut: false, active: 'bg-gray-200 text-gray-600 border-gray-300' },
+  ]
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {opts.map(({ key, label, eaten: e, ateOut: o, active }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onChange(e, o)}
+          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors font-medium
+            ${selected === key ? active : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function Field({ label, children }) {
   return (
     <div>
@@ -223,45 +255,24 @@ export default function AdminRecordEditModal({ clientId, date, existingLog, onCl
           {/* ── 食事記録 ── */}
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">食事記録</p>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-2 gap-4">
               <Field label="朝食">
-                <TriState value={form.ate_breakfast} onChange={v => set('ate_breakfast', v)}
-                  labels={['食べた', '食べてない']} />
+                <MealQuad eaten={form.ate_breakfast} ateOut={form.ate_out_breakfast}
+                  onChange={(e, o) => setForm(f => ({ ...f, ate_breakfast: e, ate_out_breakfast: o }))} />
               </Field>
               <Field label="昼食">
-                <TriState value={form.ate_lunch} onChange={v => set('ate_lunch', v)}
-                  labels={['食べた', '食べてない']} />
+                <MealQuad eaten={form.ate_lunch} ateOut={form.ate_out_lunch}
+                  onChange={(e, o) => setForm(f => ({ ...f, ate_lunch: e, ate_out_lunch: o }))} />
               </Field>
               <Field label="夕食">
-                <TriState value={form.ate_dinner} onChange={v => set('ate_dinner', v)}
-                  labels={['食べた', '食べてない']} />
+                <MealQuad eaten={form.ate_dinner} ateOut={form.ate_out_dinner}
+                  onChange={(e, o) => setForm(f => ({ ...f, ate_dinner: e, ate_out_dinner: o }))} />
               </Field>
               <Field label="間食">
                 <TriState value={form.ate_snack} onChange={v => set('ate_snack', v)}
                   labels={['あり', 'なし']} />
               </Field>
             </div>
-            <Field label="外食（複数選択可）">
-              <div className="flex gap-2">
-                {[
-                  { field: 'ate_out_breakfast', label: 'M（朝）' },
-                  { field: 'ate_out_lunch',     label: 'L（昼）' },
-                  { field: 'ate_out_dinner',    label: 'D（夜）' },
-                ].map(({ field, label }) => (
-                  <button
-                    key={field}
-                    type="button"
-                    onClick={() => set(field, !form[field])}
-                    className={`px-4 py-2 text-sm rounded-lg border font-medium transition-colors
-                      ${form[field]
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </Field>
           </div>
 
           {/* ── メモ ── */}
