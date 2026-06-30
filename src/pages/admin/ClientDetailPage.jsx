@@ -142,6 +142,7 @@ export default function ClientDetailPage() {
   // 既存患者へのログインアカウント発行（生年月日登録済が条件）
   async function handleIssueAccount() {
     if (isRestricted) { showToast('error', '他店舗顧客のため操作できません'); return }
+    if (hasPatientAccount) { showToast('info', 'この患者ログインアカウントはすでに発行済みです'); return }
     if (!client?.birthdate) { showToast('error', '生年月日が未登録のため発行できません'); return }
     if (!client?.customer_number) { showToast('error', '顧客番号が未発行です'); return }
     setIssuingAccount(true)
@@ -156,6 +157,9 @@ export default function ClientDetailPage() {
     setIssuingAccount(false)
     if (error || data?.error) {
       showToast('error', `発行失敗：${data?.error || error.message}`)
+    } else if (data?.already_exists) {
+      setHasPatientAccount(true)
+      showToast('info', 'この患者ログインアカウントはすでに発行済みです')
     } else {
       setIssuedCredentials(data)
       setHasPatientAccount(true)
@@ -295,7 +299,9 @@ export default function ClientDetailPage() {
       {/* ── トースト ── */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium
-          ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+          ${toast.type === 'success' ? 'bg-green-600 text-white'
+            : toast.type === 'info' ? 'bg-blue-600 text-white'
+            : 'bg-red-600 text-white'}`}>
           {toast.msg}
         </div>
       )}
@@ -485,12 +491,16 @@ export default function ClientDetailPage() {
             ) : hasPatientAccount ? (
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs text-gray-400">ログインURL</p>
-                  <p className="text-sm font-medium text-gray-700 break-all">{LOGIN_URL}</p>
+                  <p className="text-xs text-gray-400">ログインアカウント</p>
+                  <p className="text-sm font-bold text-green-600">発行済み</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">ログインID</p>
                   <p className="text-lg font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">ログインURL</p>
+                  <p className="text-sm font-medium text-gray-700 break-all">{LOGIN_URL}</p>
                 </div>
 
                 {showInitialPw ? (
@@ -509,6 +519,11 @@ export default function ClientDetailPage() {
                     ログイン情報表示
                   </button>
                 )}
+
+                <button onClick={handleResetPassword} disabled={resettingPw || !client.birthdate}
+                  className="block px-4 py-2 text-sm font-medium border border-orange-200 text-orange-600 rounded-lg hover:bg-orange-50 disabled:opacity-50 transition-colors">
+                  {resettingPw ? '初期化中…' : 'パスワードを誕生日で初期化'}
+                </button>
               </div>
             ) : (
               <div>

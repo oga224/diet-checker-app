@@ -24,6 +24,21 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE)
 
+    // 既に同じ client_id の患者アカウントが存在する場合はエラーにせず既存ありとして返す
+    const { data: existingProfile } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('client_id', client_id)
+      .eq('role', 'client')
+      .maybeSingle()
+    if (existingProfile?.id) {
+      return new Response(JSON.stringify({
+        success: true,
+        already_exists: true,
+        login_id: customer_number,
+      }), { headers: { ...corsHeaders(), 'Content-Type': 'application/json' } })
+    }
+
     const email    = `${customer_number.toLowerCase()}@patient.internal`
     const password = birthdate.replace(/-/g, '') // YYYY-MM-DD → YYYYMMDD
 
