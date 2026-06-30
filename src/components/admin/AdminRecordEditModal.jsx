@@ -76,11 +76,12 @@ function Field({ label, children }) {
 // ── 初期フォーム値を既存ログから生成 ─────────────────────────
 function buildInitial(date, log) {
   if (!log) {
+    // 新規追加時のみ：スタッフが入力しやすいよう、よく使う値をデフォルト選択
     return {
       date, morning_kg: '', evening_kg: '',
-      water_ml: '', toilet_count: '', sleep_hours: '',
-      bowel_movement: null, menstruation: null,
-      ate_breakfast: null, ate_lunch: null, ate_dinner: null, ate_snack: null,
+      water_ml: '1500', toilet_count: '6', sleep_hours: '0',
+      bowel_movement: true, menstruation: false,
+      ate_breakfast: true, ate_lunch: true, ate_dinner: true, ate_snack: false,
       ate_out_breakfast: false, ate_out_lunch: false, ate_out_dinner: false,
       comment: '',
     }
