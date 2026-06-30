@@ -374,7 +374,10 @@ export default function ClientDetailPage() {
           {/* 自店舗のみ記録追加・編集を許可 */}
           {!isRestricted && (
             <button
-              onClick={() => setEditModal({ date: format(new Date(), 'yyyy-MM-dd'), log: todayLog })}
+              onClick={() => setEditModal({
+                date: selectedPhotoDate,
+                log: logs.find((l) => l.date === selectedPhotoDate) ?? null,
+              })}
               className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
               ＋ 記録を追加・編集
             </button>

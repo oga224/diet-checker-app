@@ -123,6 +123,20 @@ export default function AdminRecordEditModal({ clientId, date, existingLog, onCl
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
   const inp = (key) => (e) => set(key, e.target.value)
 
+  // モーダル内で日付を変更した時：その日付の既存記録を取得して反映（なければ新規＝管理者用デフォルト）
+  async function handleDateChange(e) {
+    const newDate = e.target.value
+    set('date', newDate)
+    if (!newDate) return
+    const { data } = await supabase
+      .from('weight_logs')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('date', newDate)
+      .maybeSingle()
+    setForm(buildInitial(newDate, data ?? null))
+  }
+
   // 体重専用の onChange（小数点1桁制限）
   const weightInp = (key) => (e) => {
     const filtered = filterWeightInput(e.target.value)
@@ -198,7 +212,7 @@ export default function AdminRecordEditModal({ clientId, date, existingLog, onCl
           {/* 日付 */}
           <Field label="日付 *">
             <input type="date" className={inputCls} value={form.date}
-              onChange={inp('date')} required />
+              onChange={handleDateChange} required />
           </Field>
 
           {/* ── 体重 ── */}
