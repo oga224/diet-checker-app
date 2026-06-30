@@ -41,6 +41,8 @@ export default function ClientDetailPage() {
   const [refreshKey,       setRefreshKey]       = useState(0)
   const [editModal,        setEditModal]        = useState(null)
   const [selectedPhotoDate, setSelectedPhotoDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [resettingPw, setResettingPw] = useState(false)
+  const [pwResetResult, setPwResetResult] = useState(null)
   const mealPhotoRef = useRef(null)
 
   const clientCommentCount        = useClientCommentCount(id)
@@ -107,6 +109,21 @@ export default function ClientDetailPage() {
     else { navigate('/admin/clients', { state: { deleted: client?.name } }) }
   }
 
+  async function handleResetPassword() {
+    if (isRestricted) { showToast('error', '他店舗顧客のため操作できません'); return }
+    if (!client?.birthdate) { showToast('error', '生年月日が未登録です。編集から登録してください'); return }
+    setResettingPw(true)
+    const { data, error } = await supabase.functions.invoke('reset-patient-password', {
+      body: { client_id: id },
+    })
+    setResettingPw(false)
+    if (error || data?.error) {
+      showToast('error', `初期化失敗：${data?.error || error.message}`)
+    } else {
+      setPwResetResult(data.password)
+    }
+  }
+
   // ── ローディング・エラー画面 ───────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -157,10 +174,28 @@ export default function ClientDetailPage() {
     goal_weight: client.goal_weight != null ? String(client.goal_weight): '',
     memo:        client.memo        ?? '',
     is_active:   client.is_active   ?? true,
+    birthdate:   client.birthdate   ?? '',
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* パスワード初期化結果モーダル */}
+      {pwResetResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <p className="text-3xl mb-2">🔑</p>
+            <h2 className="text-lg font-bold text-gray-800 mb-3">パスワードを初期化しました</h2>
+            <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-4">
+              <p className="text-xs text-purple-600 font-bold">新しいパスワード</p>
+              <p className="text-2xl font-black text-gray-800">{pwResetResult}</p>
+            </div>
+            <button onClick={() => setPwResetResult(null)}
+              className="w-full mt-5 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors">
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── 記録編集モーダル（isRestricted の場合は開かない） ── */}
       {editModal && !isRestricted && (
         <AdminRecordEditModal
@@ -268,6 +303,10 @@ export default function ClientDetailPage() {
               <button onClick={() => setShowEdit(true)}
                 className="px-3 py-1.5 text-sm font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
                 編集
+              </button>
+              <button onClick={handleResetPassword} disabled={resettingPw}
+                className="px-3 py-1.5 text-sm font-medium border border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors disabled:opacity-50">
+                {resettingPw ? '初期化中…' : 'パスワード初期化'}
               </button>
               <button onClick={() => setShowDelete(true)}
                 className="px-3 py-1.5 text-sm font-medium border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-colors">

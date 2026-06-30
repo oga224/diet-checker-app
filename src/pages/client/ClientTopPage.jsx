@@ -4,10 +4,11 @@ import { format, parseISO } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import FirstLoginTips from '../../components/client/FirstLoginTips'
 
 export default function ClientTopPage() {
   const { id } = useParams()
-  const { signOut } = useAuth()
+  const { signOut, profile } = useAuth()
   const [client, setClient]         = useState(null)
   const [todayLog, setTodayLog]     = useState(null)
   const [latestComment, setLatestComment] = useState(null)
@@ -19,7 +20,7 @@ export default function ClientTopPage() {
   useEffect(() => {
     async function fetchData() {
       const [clientRes, logRes, commentRes] = await Promise.all([
-        supabase.from('clients').select('name, goal_weight').eq('id', id).single(),
+        supabase.from('clients').select('name, goal_weight, customer_number').eq('id', id).single(),
         supabase.from('weight_logs').select('morning_kg, evening_kg, comment')
           .eq('client_id', id).eq('date', today).maybeSingle(),
         supabase.from('admin_comments')
@@ -66,9 +67,13 @@ export default function ClientTopPage() {
         {client?.goal_weight && (
           <p className="text-blue-200 text-sm mt-1">目標：{client.goal_weight} kg</p>
         )}
+        {client?.customer_number && (
+          <p className="text-blue-200 text-xs mt-1">ログインID：{client.customer_number}</p>
+        )}
       </header>
 
       <main className="max-w-md mx-auto px-5 pt-8 space-y-4">
+        <FirstLoginTips clientId={id} profile={profile} />
         {/* 今日の記録状況 */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <p className="text-base font-bold text-gray-700 mb-3">今日の記録</p>
@@ -137,6 +142,14 @@ export default function ClientTopPage() {
               <p className="text-sm text-gray-400">先生へメッセージを送ることができます</p>
             )}
           </div>
+        </Link>
+
+        {/* パスワード変更 */}
+        <Link
+          to={`/client/${id}/password`}
+          className="block text-center text-sm text-gray-400 hover:text-gray-600 py-3"
+        >
+          🔒 パスワードを変更する
         </Link>
       </main>
     </div>

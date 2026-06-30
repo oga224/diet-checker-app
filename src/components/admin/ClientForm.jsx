@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 const EMPTY_FORM = {
-  name: '', age: '', height_cm: '', goal_weight: '', memo: '', is_active: true,
+  name: '', age: '', height_cm: '', goal_weight: '', memo: '', is_active: true, birthdate: '',
 }
 
 const inputCls =
@@ -18,7 +18,7 @@ function Field({ label, required, children }) {
   )
 }
 
-export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting }) {
+export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting, requireBirthdate = false }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...initial })
   const [err,  setErr]  = useState('')
 
@@ -29,6 +29,7 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
     if (!form.name.trim())  { setErr('氏名は必須です'); return }
     if (!form.age)          { setErr('年齢は必須です'); return }
     if (!form.height_cm)    { setErr('身長は必須です'); return }
+    if (requireBirthdate && !form.birthdate) { setErr('生年月日は必須です（初期パスワードに使用します）'); return }
     setErr('')
 
     onSubmit({
@@ -38,6 +39,7 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
       goal_weight: form.goal_weight ? Number(form.goal_weight) : null,
       memo:        form.memo.trim() || null,
       is_active:   form.is_active,
+      birthdate:   form.birthdate || null,
     })
   }
 
@@ -91,6 +93,15 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
             value={form.goal_weight} onChange={set('goal_weight')} placeholder="55.0" />
         </Field>
       </div>
+
+      {/* 生年月日（初期パスワードに使用） */}
+      <Field label="生年月日" required={requireBirthdate}>
+        <input className={inputCls} type="date"
+          value={form.birthdate} onChange={set('birthdate')} max={new Date().toISOString().slice(0, 10)} />
+        {requireBirthdate && (
+          <p className="text-xs text-gray-400 mt-1">患者ログインの初期パスワードに使用します（例：19800606）</p>
+        )}
+      </Field>
 
       {/* 目的・悩み */}
       <Field label="目的・悩み">

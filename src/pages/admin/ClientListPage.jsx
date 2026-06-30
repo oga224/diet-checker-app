@@ -61,6 +61,7 @@ export default function ClientListPage() {
   const [showForm,      setShowForm]      = useState(false)
   const [submitting,    setSubmitting]    = useState(false)
   const [toast,         setToast]         = useState(null)
+  const [createdCredentials, setCreatedCredentials] = useState(null) // 登録完了後のログイン情報
   const [stores,        setStores]        = useState([])             // 全店舗リスト
   const [selectedStoreId, setSelectedStoreId] = useState(null)      // null=全店舗
   const [storeFilterReady, setStoreFilterReady] = useState(false)   // 初期化完了フラグ
@@ -189,22 +190,51 @@ export default function ClientListPage() {
     // store_id は必ず自分の店舗（selectedStoreId は使わない）
     const createPayload = { ...payload, store_id: profile.store_id }
 
-    // 顧客番号を自動採番（store_id がある場合のみ）
-    if (profile?.store_id) {
-      const [storeRes, countRes] = await Promise.all([
-        supabase.from('stores').select('code').eq('id', profile.store_id).single(),
-        supabase.from('clients').select('*', { count: 'exact', head: true }).eq('store_id', profile.store_id),
-      ])
-      if (!storeRes.error && storeRes.data?.code) {
-        const nextNum = (countRes.count || 0) + 1
-        createPayload.customer_number = `${storeRes.data.code}-${String(nextNum).padStart(5, '0')}`
-      }
+    // 顧客番号を自動採番
+    const [storeRes, countRes] = await Promise.all([
+      supabase.from('stores').select('code').eq('id', profile.store_id).single(),
+      supabase.from('clients').select('*', { count: 'exact', head: true }).eq('store_id', profile.store_id),
+    ])
+    let customerNumber = null
+    if (!storeRes.error && storeRes.data?.code) {
+      const nextNum = (countRes.count || 0) + 1
+      customerNumber = `${storeRes.data.code}-${String(nextNum).padStart(5, '0')}`
+      createPayload.customer_number = customerNumber
     }
 
     const { error, data } = await supabase.from('clients').insert(createPayload).select().single()
+    if (error) {
+      setSubmitting(false)
+      showToast('error', `登録に失敗しました：${error.message}`)
+      return
+    }
+
+    // Edge Function でログインアカウントを作成（顧客番号 + 誕生日8桁）
+    let credentials = null
+    if (customerNumber && payload.birthdate) {
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('create-patient-user', {
+        body: {
+          client_id: data.id,
+          customer_number: customerNumber,
+          birthdate: payload.birthdate,
+          store_id: profile.store_id,
+        },
+      })
+      if (fnError || fnData?.error) {
+        showToast('error', `ログインアカウント作成に失敗：${fnData?.error || fnError.message}（顧客情報は登録済みです）`)
+      } else {
+        credentials = fnData
+      }
+    }
+
     setSubmitting(false)
-    if (error) { showToast('error', `登録に失敗しました：${error.message}`) }
-    else { setShowForm(false); showToast('success', `${data.name} さんを登録しました`); fetchAll() }
+    setShowForm(false)
+    if (credentials) {
+      setCreatedCredentials({ name: data.name, ...credentials })
+    } else {
+      showToast('success', `${data.name} さんを登録しました`)
+    }
+    fetchAll()
   }
 
   // ── ソート：未入力日数が多い順 → 今日入力済みはスコア低い順 → 終了者は末尾 ──
@@ -236,6 +266,37 @@ export default function ClientListPage() {
         </div>
       )}
 
+      {/* 登録完了：ログイン情報モーダル */}
+      {createdCredentials && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="text-center mb-4">
+              <p className="text-3xl mb-2">✅</p>
+              <h2 className="text-lg font-bold text-gray-800">
+                {createdCredentials.name} さんを登録しました
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">ログイン情報を控えてお渡しください</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 space-y-3">
+              <div>
+                <p className="text-xs text-blue-600 font-bold">ログインID</p>
+                <p className="text-2xl font-black text-gray-800">{createdCredentials.login_id}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-bold">初期パスワード</p>
+                <p className="text-2xl font-black text-gray-800">{createdCredentials.password}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setCreatedCredentials(null)}
+              className="w-full mt-5 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">お客さん一覧</h1>
@@ -263,7 +324,7 @@ export default function ClientListPage() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-5">お客さん新規登録</h2>
-            <ClientForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} submitting={submitting} />
+            <ClientForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} submitting={submitting} requireBirthdate />
           </div>
         </div>
       )}

@@ -12,6 +12,7 @@ import ClientRecordPage   from './pages/client/ClientRecordPage'
 import ClientHistoryPage  from './pages/client/ClientHistoryPage'
 import ClientCommentsPage from './pages/client/ClientCommentsPage'
 import ClientCalendarPage from './pages/client/ClientCalendarPage'
+import ClientPasswordChangePage from './pages/client/ClientPasswordChangePage'
 
 export default function AppRouter() {
   return (
@@ -37,6 +38,7 @@ export default function AppRouter() {
             <Route path="history"              element={<ClientHistoryPage />} />
             <Route path="comments"             element={<ClientCommentsPage />} />
             <Route path="calendar"             element={<ClientCalendarPage />} />
+            <Route path="password"             element={<ClientPasswordChangePage />} />
           </Route>
         </Routes>
       </AuthProvider>
