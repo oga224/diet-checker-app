@@ -190,15 +190,19 @@ export default function ClientListPage() {
     // store_id は必ず自分の店舗（selectedStoreId は使わない）
     const createPayload = { ...payload, store_id: profile.store_id }
 
-    // 顧客番号を自動採番
-    const [storeRes, countRes] = await Promise.all([
-      supabase.from('stores').select('code').eq('id', profile.store_id).single(),
-      supabase.from('clients').select('*', { count: 'exact', head: true }).eq('store_id', profile.store_id),
-    ])
+    // 顧客番号を自動採番（店舗コードごとの採番台帳から「最大番号+1」を取得。
+    // 削除済み番号は台帳に残り続けるため再利用されない）
+    const storeRes = await supabase.from('stores').select('code').eq('id', profile.store_id).single()
     let customerNumber = null
     if (!storeRes.error && storeRes.data?.code) {
-      const nextNum = (countRes.count || 0) + 1
-      customerNumber = `${storeRes.data.code}-${String(nextNum).padStart(5, '0')}`
+      const { data: nextNumber, error: numError } = await supabase
+        .rpc('next_customer_number', { p_store_code: storeRes.data.code })
+      if (numError || !nextNumber) {
+        setSubmitting(false)
+        showToast('error', `顧客番号の採番に失敗しました：${numError?.message || '不明なエラー'}`)
+        return
+      }
+      customerNumber = nextNumber
       createPayload.customer_number = customerNumber
     }
 
