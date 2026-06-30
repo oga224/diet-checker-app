@@ -442,6 +442,7 @@ export default function ClientListPage() {
                 const hist       = weightHistory[c.id] ?? null
                 const commCnt    = commentCounts[c.id] ?? 0
                 const otherStore = isFromOtherStore(c)
+                const isInactive = c.is_active === false
                 const cnum = c.customer_number || ''
                 // 他店舗: 顧客番号 + 店舗名。自店舗: 顧客番号 + 氏名
                 const clientStore = stores.find(s => s.id === c.store_id)
@@ -469,7 +470,7 @@ export default function ClientListPage() {
                   <Link
                     key={c.id}
                     to={`/admin/clients/${c.id}`}
-                    className="bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-blue-300 hover:shadow-sm transition-all"
+                    className={`bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-blue-300 hover:shadow-sm transition-all ${isInactive ? 'opacity-70' : ''}`}
                   >
                     {/* 上段：名前 + バッジ群 */}
                     <div className="flex items-center justify-between gap-2 mb-2">
@@ -478,14 +479,20 @@ export default function ClientListPage() {
                           {avatarLetter}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-gray-800 flex items-center gap-1.5 text-sm">
-                            {!otherStore && c.is_active !== false && <span className="text-red-500 text-xs">●</span>}
+                          <p className={`font-semibold flex items-center gap-1.5 text-sm ${isInactive ? 'text-gray-500' : 'text-gray-800'}`}>
+                            {!otherStore && !isInactive && <span className="text-red-500 text-xs">●</span>}
                             {displayName}
                           </p>
                           {displaySub && <p className={`text-xs ${otherStore ? 'text-orange-400' : 'text-gray-400'}`}>{displaySub}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* 終了バッジ */}
+                        {isInactive && (
+                          <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full">
+                            終了
+                          </span>
+                        )}
                         {/* コメントバッジ（他店舗は非表示） */}
                         {!otherStore && commCnt > 0 && (
                           <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
