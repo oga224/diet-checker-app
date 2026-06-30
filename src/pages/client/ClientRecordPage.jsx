@@ -103,6 +103,46 @@ function BigToggle({ label, value, onChange,
 }
 
 // ─────────────────────────────────────────────────────────────
+// 食事3択ボタン（食べた / 食べてない / 外食）
+// ─────────────────────────────────────────────────────────────
+function MealToggle3({ label, eaten, ateOut, onChange }) {
+  const selected = eaten === true && ateOut ? 'out'
+    : eaten === true ? 'eaten'
+    : eaten === false ? 'not'
+    : null
+
+  function pick(opt) {
+    if (selected === opt) { onChange(null, false); return }
+    if (opt === 'eaten')     onChange(true, false)
+    else if (opt === 'not')  onChange(false, false)
+    else                     onChange(true, true)
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="text-base font-bold text-gray-700 mb-2">{label}</p>
+      <div className="grid grid-cols-3 gap-2">
+        <button type="button" onClick={() => pick('eaten')}
+          className={`py-4 rounded-2xl text-base font-bold transition-all active:scale-95
+            ${selected === 'eaten' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}>
+          食べた
+        </button>
+        <button type="button" onClick={() => pick('not')}
+          className={`py-4 rounded-2xl text-base font-bold transition-all active:scale-95
+            ${selected === 'not' ? 'bg-gray-500 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}>
+          食べてない
+        </button>
+        <button type="button" onClick={() => pick('out')}
+          className={`py-4 rounded-2xl text-base font-bold transition-all active:scale-95
+            ${selected === 'out' ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}>
+          外食
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 // 数値入力（水分・睡眠・トイレ）
 // ─────────────────────────────────────────────────────────────
 function NumberRow({ emoji, label, value, onChange, unit, min, max, step = '1', placeholder }) {
@@ -197,6 +237,9 @@ export default function ClientRecordPage() {
   }, [id, today])
 
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })) }
+  function setMeal(prefix, eaten, ateOut) {
+    setForm((f) => ({ ...f, [`ate_${prefix}`]: eaten, [`ate_out_${prefix}`]: ateOut }))
+  }
   function setPhoto(key, url) { setPhotos((p) => ({ ...p, [key]: url })) }
 
   // 保存処理
@@ -317,15 +360,12 @@ export default function ClientRecordPage() {
 
         {/* ══ 2. 食事 ══════════════════════════════════════ */}
         <SectionHeader emoji="🍽️" label="食事" />
-        <BigToggle label="🍳 朝ごはん" value={form.ate_breakfast}
-          onChange={(v) => set('ate_breakfast', v)}
-          trueLabel="食べた" falseLabel="食べてない" falseColor="bg-gray-400" />
-        <BigToggle label="🍱 昼ごはん" value={form.ate_lunch}
-          onChange={(v) => set('ate_lunch', v)}
-          trueLabel="食べた" falseLabel="食べてない" falseColor="bg-gray-400" />
-        <BigToggle label="🍚 夜ごはん" value={form.ate_dinner}
-          onChange={(v) => set('ate_dinner', v)}
-          trueLabel="食べた" falseLabel="食べてない" falseColor="bg-gray-400" />
+        <MealToggle3 label="🍳 朝ごはん" eaten={form.ate_breakfast} ateOut={form.ate_out_breakfast}
+          onChange={(eaten, ateOut) => setMeal('breakfast', eaten, ateOut)} />
+        <MealToggle3 label="🍱 昼ごはん" eaten={form.ate_lunch} ateOut={form.ate_out_lunch}
+          onChange={(eaten, ateOut) => setMeal('lunch', eaten, ateOut)} />
+        <MealToggle3 label="🍚 夜ごはん" eaten={form.ate_dinner} ateOut={form.ate_out_dinner}
+          onChange={(eaten, ateOut) => setMeal('dinner', eaten, ateOut)} />
         <BigToggle label="🍰 間食" value={form.ate_snack}
           onChange={(v) => set('ate_snack', v)}
           trueLabel="あり" falseLabel="なし" falseColor="bg-gray-400" />

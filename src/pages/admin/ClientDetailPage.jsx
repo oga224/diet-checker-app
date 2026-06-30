@@ -127,6 +127,7 @@ export default function ClientDetailPage() {
   async function handleResetPassword() {
     if (isRestricted) { showToast('error', '他店舗顧客のため操作できません'); return }
     if (!client?.birthdate) { showToast('error', '生年月日が未登録のため初期化できません'); return }
+    if (!window.confirm('本当にパスワードを生年月日で初期化しますか？')) return
     setResettingPw(true)
     const { data, error } = await supabase.functions.invoke('reset-patient-password', {
       body: { client_id: id },
@@ -155,8 +156,13 @@ export default function ClientDetailPage() {
       },
     })
     setIssuingAccount(false)
-    if (error || data?.error) {
-      showToast('error', `発行失敗：${data?.error || error.message}`)
+    const errMsg = data?.error || error?.message || ''
+    if (errMsg && /already registered|already exists|既に登録|重複/i.test(errMsg)) {
+      // 既に Auth ユーザーが存在する（発行済み）場合は赤エラーにせず案内表示
+      setHasPatientAccount(true)
+      showToast('info', 'この患者ログインアカウントはすでに発行済みです')
+    } else if (error || data?.error) {
+      showToast('error', `発行失敗：${errMsg}`)
     } else if (data?.already_exists) {
       setHasPatientAccount(true)
       showToast('info', 'この患者ログインアカウントはすでに発行済みです')
