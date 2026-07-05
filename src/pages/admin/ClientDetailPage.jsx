@@ -182,12 +182,25 @@ export default function ClientDetailPage() {
   async function handleDiagnose() {
     setDiagnosing(true)
     setDiagnosisResult(null)
-    const { data, error } = await supabase.functions.invoke('diagnose-patient-login', {
-      body: { client_id: id },
-    })
+    let data = null, error = null
+    try {
+      const res = await supabase.functions.invoke('diagnose-patient-login', {
+        body: { client_id: id },
+      })
+      data  = res.data
+      error = res.error
+    } catch (e) {
+      error = e
+    }
     setDiagnosing(false)
     if (error || data?.error) {
-      showToast('error', `診断失敗：${data?.error || error?.message}`)
+      const msg = data?.error || error?.message || String(error) || '不明なエラー'
+      console.error('[diagnose-patient-login] 呼び出し失敗:', { error, data })
+      // Edge Function 未デプロイ時の案内を含める
+      const hint = msg.includes('Failed to send') || msg.includes('fetch')
+        ? '（Edge Functionが未デプロイの可能性があります。supabase functions deploy diagnose-patient-login を実行してください）'
+        : ''
+      showToast('error', `診断失敗：${msg}${hint}`)
       return
     }
     setDiagnosisResult(data)
@@ -720,6 +733,7 @@ export default function ClientDetailPage() {
               clientId={id}
               date={selectedPhotoDate}
               sectionRef={mealPhotoRef}
+              showToast={showToast}
             />
           }
         />
