@@ -435,7 +435,7 @@ export default function ClientRecordPage() {
           disabled={saving}
           className="mt-8 w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-2xl font-black py-7 rounded-2xl shadow-lg transition-colors"
         >
-          {saving ? '保存中…' : '記録を送信する'}
+          {saving ? '保存中…' : '💾 保存する'}
         </button>
 
         <div className="h-8" />
