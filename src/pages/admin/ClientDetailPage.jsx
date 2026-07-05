@@ -183,24 +183,33 @@ export default function ClientDetailPage() {
     setDiagnosing(true)
     setDiagnosisResult(null)
     let data = null, error = null
+    // ── デバッグ：実際に呼び出しているURLを確認 ──
+    const _diagFnName = 'diagnose-patient-login'
+    const _diagFnUrl  = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${_diagFnName}`
+    console.log('[diagnose] function name:', _diagFnName)
+    console.log('[diagnose] full URL:', _diagFnUrl)
     try {
-      const res = await supabase.functions.invoke('diagnose-patient-login', {
+      const res = await supabase.functions.invoke(_diagFnName, {
         body: { client_id: id },
       })
       data  = res.data
       error = res.error
+      console.log('[diagnose] response:', { data, error })
     } catch (e) {
       error = e
+      console.error('[diagnose] fetch threw:', e)
     }
     setDiagnosing(false)
     if (error || data?.error) {
       const msg = data?.error || error?.message || String(error) || '不明なエラー'
-      console.error('[diagnose-patient-login] 呼び出し失敗:', { error, data })
-      // Edge Function 未デプロイ時の案内を含める
-      const hint = msg.includes('Failed to send') || msg.includes('fetch')
-        ? '（Edge Functionが未デプロイの可能性があります。supabase functions deploy diagnose-patient-login を実行してください）'
-        : ''
-      showToast('error', `診断失敗：${msg}${hint}`)
+      console.error('[diagnose-patient-login] 呼び出し失敗 詳細:', {
+        functionName: _diagFnName,
+        url: _diagFnUrl,
+        errorObject: error,
+        errorKeys: error ? Object.keys(error) : [],
+        data,
+      })
+      showToast('error', `診断失敗：${msg}`)
       return
     }
     setDiagnosisResult(data)
