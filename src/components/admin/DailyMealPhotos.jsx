@@ -67,14 +67,20 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
   // 写真アップロード → meal_logs に即時 upsert
   async function handlePhotoUploaded(urlKey, url) {
     setMealLog(prev => ({ ...(prev ?? { client_id: clientId, date }), [urlKey]: url }))
-    const { error } = await supabase
+
+    // ④ meal_logs upsert の内容と結果
+    const upsertPayload = { client_id: clientId, date, [urlKey]: url }
+    console.log('[DailyMealPhotos] ④ meal_logs upsert 開始', upsertPayload)
+
+    const { data: upsertData, error } = await supabase
       .from('meal_logs')
-      .upsert(
-        { client_id: clientId, date, [urlKey]: url },
-        { onConflict: 'client_id,date' }
-      )
+      .upsert(upsertPayload, { onConflict: 'client_id,date' })
+      .select()
+
+    console.log('[DailyMealPhotos] ④ meal_logs upsert 結果:', { upsertData, error })
+
     if (error) {
-      console.error('[DailyMealPhotos] meal_logs upsert error:', error)
+      console.error('[DailyMealPhotos] meal_logs upsert error 詳細:', error)
       showToast?.('error', `写真の保存に失敗しました：${error.message}`)
       setMealLog(prev => ({ ...prev, [urlKey]: null }))
     } else {

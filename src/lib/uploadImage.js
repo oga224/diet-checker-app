@@ -48,14 +48,24 @@ function compressImage(file, maxPx = 1200, quality = 0.85) {
 export async function uploadImage(file, bucket, path) {
   const compressed = await compressImage(file)
 
-  const { error: uploadError } = await supabase.storage
+  // ① storage.upload の呼び出し内容
+  console.log('[uploadImage] ① storage.upload 開始', { bucket, path, size: compressed.size, type: compressed.type })
+
+  const { data: uploadData, error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(path, compressed, { contentType: 'image/jpeg', upsert: true })
 
+  // ② uploadError
+  console.log('[uploadImage] ② uploadError:', uploadError)
+  console.log('[uploadImage]    uploadData:', uploadData)
+
   if (uploadError) throw new Error(`アップロード失敗：${uploadError.message}`)
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl
+  // ③ getPublicUrl の戻り値
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path)
+  console.log('[uploadImage] ③ getPublicUrl:', urlData)
+
+  return urlData.publicUrl
 }
 
 /**
