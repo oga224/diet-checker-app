@@ -50,6 +50,8 @@ export default function ClientDetailPage() {
   const [issuingAccount, setIssuingAccount] = useState(false)
   const [issuedCredentials, setIssuedCredentials] = useState(null) // {login_id, password}
   const [showInitialPw, setShowInitialPw] = useState(false)
+  const [diagnosisResult, setDiagnosisResult] = useState(null)
+  const [diagnosing, setDiagnosing] = useState(false)
   const mealPhotoRef = useRef(null)
 
   const clientCommentCount        = useClientCommentCount(id)
@@ -136,6 +138,11 @@ export default function ClientDetailPage() {
     if (error || data?.error) {
       showToast('error', `初期化失敗：${data?.error || error.message}`)
     } else {
+      if (data.created) {
+        setHasPatientAccount(true)
+        setDiagnosisResult(null)
+        showToast('success', 'アカウントを新規作成してパスワードを設定しました')
+      }
       setPwResetResult(data.password)
     }
   }
@@ -170,6 +177,21 @@ export default function ClientDetailPage() {
       setIssuedCredentials(data)
       setHasPatientAccount(true)
     }
+  }
+
+  async function handleDiagnose() {
+    setDiagnosing(true)
+    setDiagnosisResult(null)
+    const { data, error } = await supabase.functions.invoke('diagnose-patient-login', {
+      body: { client_id: id },
+    })
+    setDiagnosing(false)
+    if (error || data?.error) {
+      showToast('error', `診断失敗：${data?.error || error?.message}`)
+      return
+    }
+    setDiagnosisResult(data)
+    setHasPatientAccount(data.status !== 'unissued')
   }
 
   // ── ローディング・エラー画面 ───────────────────────────────
@@ -213,6 +235,13 @@ export default function ClientDetailPage() {
     朝:   l.morning_kg ?? undefined,
     夜:   l.evening_kg ?? undefined,
   }))
+
+  // ログイン状態（4値）
+  const loginStatus = hasPatientAccount === null ? null
+    : !hasPatientAccount                              ? 'unissued'
+    : diagnosisResult?.status === 'loginable'         ? 'loginable'
+    : diagnosisResult?.status === 'error'             ? 'error'
+    : 'issued'
 
   // 編集フォーム初期値（表示5項目に絞る）
   const editInitial = {
@@ -493,23 +522,30 @@ export default function ClientDetailPage() {
         ══════════════════════════════════════════════ */}
         {!isRestricted && (
           <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">患者ログイン情報</h2>
+            {/* ヘッダー＋状態バッジ */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">患者ログイン情報</h2>
+              <div>
+                {loginStatus === 'unissued'  && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">未発行</span>}
+                {loginStatus === 'issued'    && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200">発行済み</span>}
+                {loginStatus === 'loginable' && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-600 border border-green-200">ログイン可能</span>}
+                {loginStatus === 'error'     && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200">エラー</span>}
+              </div>
+            </div>
 
             {hasPatientAccount === null ? (
               <p className="text-sm text-gray-400">確認中…</p>
             ) : hasPatientAccount ? (
               <div className="space-y-3">
-                <div>
-                  <p className="text-xs text-gray-400">ログインアカウント</p>
-                  <p className="text-sm font-bold text-green-600">発行済み</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400">ログインID</p>
-                  <p className="text-lg font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400">ログインURL</p>
-                  <p className="text-sm font-medium text-gray-700 break-all">{LOGIN_URL}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-400">ログインID</p>
+                    <p className="text-lg font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">ログインURL</p>
+                    <p className="text-xs font-medium text-gray-700 break-all">{LOGIN_URL}</p>
+                  </div>
                 </div>
 
                 {showInitialPw ? (
@@ -529,10 +565,57 @@ export default function ClientDetailPage() {
                   </button>
                 )}
 
-                <button onClick={handleResetPassword} disabled={resettingPw || !client.birthdate}
-                  className="block px-4 py-2 text-sm font-medium border border-orange-200 text-orange-600 rounded-lg hover:bg-orange-50 disabled:opacity-50 transition-colors">
-                  {resettingPw ? '初期化中…' : 'パスワードを誕生日で初期化'}
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={handleResetPassword} disabled={resettingPw || !client.birthdate}
+                    className="px-4 py-2 text-sm font-medium border border-orange-200 text-orange-600 rounded-lg hover:bg-orange-50 disabled:opacity-50 transition-colors">
+                    {resettingPw ? '初期化中…' : 'パスワードを誕生日で初期化'}
+                  </button>
+                  <button onClick={handleDiagnose} disabled={diagnosing}
+                    className="px-4 py-2 text-sm font-medium border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
+                    {diagnosing ? '診断中…' : 'ログイン診断'}
+                  </button>
+                </div>
+
+                {/* 診断結果パネル */}
+                {diagnosisResult && (
+                  <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
+                    <div className={`px-4 py-2 font-bold text-white text-sm
+                      ${diagnosisResult.status === 'loginable' ? 'bg-green-500'
+                        : diagnosisResult.status === 'error' ? 'bg-red-500'
+                        : 'bg-blue-500'}`}>
+                      診断結果：{
+                        diagnosisResult.status === 'loginable' ? 'ログイン可能'
+                        : diagnosisResult.status === 'error' ? 'エラーあり'
+                        : '発行済み'
+                      }
+                    </div>
+                    <div className="px-4 py-3 space-y-1.5 bg-gray-50">
+                      {[
+                        { label: 'auth.users',       value: diagnosisResult.auth_user?.id   ? `あり（${diagnosisResult.auth_user.email}）` : 'なし', ok: !!diagnosisResult.auth_user },
+                        { label: 'profiles',          value: diagnosisResult.profile?.id    ? 'あり' : 'なし',                                         ok: !!diagnosisResult.profile },
+                        { label: 'client_id',         value: diagnosisResult.profile?.client_id ?? 'なし',                                             ok: !!diagnosisResult.profile?.client_id },
+                        { label: 'store_id',          value: String(diagnosisResult.profile?.store_id ?? 'なし'),                                       ok: true },
+                        { label: 'password_changed',  value: diagnosisResult.profile?.password_changed == null ? '—' : diagnosisResult.profile.password_changed ? 'true（変更済み）' : 'false（初期）', ok: true },
+                        { label: 'first_login_at',    value: diagnosisResult.profile?.first_login_at ?? '未ログイン',                                  ok: true },
+                        { label: '最終ログイン',       value: diagnosisResult.auth_user?.last_sign_in_at ?? '—',                                       ok: true },
+                      ].map(({ label, value, ok }) => (
+                        <div key={label} className="flex items-start gap-2">
+                          <span className={`flex-shrink-0 font-bold ${ok ? 'text-green-500' : 'text-red-500'}`}>{ok ? '✓' : '✗'}</span>
+                          <span className="text-gray-500 w-36 flex-shrink-0">{label}</span>
+                          <span className="text-gray-800 font-medium break-all">{String(value)}</span>
+                        </div>
+                      ))}
+                      {diagnosisResult.issues?.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="text-red-600 font-bold mb-1">問題点：</p>
+                          {diagnosisResult.issues.map((issue, i) => (
+                            <p key={i} className="text-red-500">• {issue}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div>
@@ -540,10 +623,21 @@ export default function ClientDetailPage() {
                 {!client.birthdate ? (
                   <p className="text-sm text-orange-500">生年月日を登録すると発行できます（「編集」から登録）</p>
                 ) : (
-                  <button onClick={handleIssueAccount} disabled={issuingAccount}
-                    className="px-4 py-2.5 text-sm font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                    {issuingAccount ? '発行中…' : '患者ログインアカウント発行'}
-                  </button>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={handleIssueAccount} disabled={issuingAccount}
+                      className="px-4 py-2.5 text-sm font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                      {issuingAccount ? '発行中…' : '患者ログインアカウント発行'}
+                    </button>
+                    <button onClick={handleDiagnose} disabled={diagnosing}
+                      className="px-4 py-2 text-sm font-medium border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
+                      {diagnosing ? '診断中…' : 'ログイン診断'}
+                    </button>
+                  </div>
+                )}
+                {diagnosisResult && diagnosisResult.status !== 'unissued' && (
+                  <p className="text-xs text-orange-500 mt-2">
+                    ※診断でアカウントが検出されました。ページを再読み込みしてください。
+                  </p>
                 )}
               </div>
             )}
