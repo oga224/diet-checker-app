@@ -4,18 +4,20 @@ import { uploadImage, deleteImage, urlToPath } from '../lib/uploadImage'
 /**
  * 汎用写真アップロードコンポーネント
  * Props:
- *   label      - 表示ラベル
- *   bucket     - Supabaseバケット名
- *   storagePath - アップロード先パス
- *   url        - 現在の公開URL（外部から管理）
+ *   label        - 表示ラベル
+ *   bucket       - Supabaseバケット名
+ *   storagePath  - アップロード先パス
+ *   url          - 現在の公開URL（外部から管理）
  *   onUploaded(url) - アップロード完了時
  *   onDeleted()     - 削除完了時
- *   compact    - コンパクト表示モード（管理者画面用）
+ *   compact      - コンパクト表示モード（管理者画面用）
+ *   mobileChoice - true のとき「撮影」「ライブラリ」2択ボタンを表示（患者側用）
  */
 export default function PhotoUpload({
-  label, bucket, storagePath, url, onUploaded, onDeleted, compact = false,
+  label, bucket, storagePath, url, onUploaded, onDeleted, compact = false, mobileChoice = false,
 }) {
-  const inputRef   = useRef(null)
+  const inputRef    = useRef(null) // カメラ / 管理者用（capture あり）
+  const libraryRef  = useRef(null) // ライブラリ選択用（capture なし）
   const [uploading, setUploading] = useState(false)
   const [error, setError]         = useState(null)
 
@@ -58,10 +60,12 @@ export default function PhotoUpload({
   }
 
   if (compact) {
+    const accept = "image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif"
     return (
       <div className="flex flex-col gap-1.5">
         <p className="text-xs font-medium text-gray-500">{label}</p>
         {url ? (
+          /* 写真あり：サムネイル + 削除ボタン */
           <div className="relative group">
             <img
               src={url}
@@ -77,32 +81,61 @@ export default function PhotoUpload({
               ✕
             </button>
           </div>
+        ) : uploading ? (
+          /* アップロード中スピナー */
+          <div className="w-full aspect-square rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-400 rounded-full animate-spin" />
+          </div>
+        ) : mobileChoice ? (
+          /* 患者側：撮影 / ライブラリ 2択 */
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center gap-1.5 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors text-xs font-medium"
+            >
+              <span>📷</span><span>撮影</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => libraryRef.current?.click()}
+              className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center gap-1.5 text-gray-400 hover:border-green-300 hover:text-green-500 transition-colors text-xs font-medium"
+            >
+              <span>🖼️</span><span>選ぶ</span>
+            </button>
+          </div>
         ) : (
+          /* 管理者側：従来の1ボタン */
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={uploading}
             className="w-full aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 text-gray-300 hover:border-blue-300 hover:text-blue-300 transition-colors disabled:opacity-50"
           >
-            {uploading ? (
-              <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-400 rounded-full animate-spin" />
-            ) : (
-              <>
-                <span className="text-2xl">📷</span>
-                <span className="text-xs">追加</span>
-              </>
-            )}
+            <span className="text-2xl">📷</span>
+            <span className="text-xs">追加</span>
           </button>
         )}
         {error && <p className="text-xs text-red-500">{error}</p>}
+
+        {/* カメラ起動用（capture あり） */}
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif"
+          accept={accept}
           capture="environment"
           className="hidden"
           onChange={handleChange}
         />
+        {/* ライブラリ選択用（capture なし） */}
+        {mobileChoice && (
+          <input
+            ref={libraryRef}
+            type="file"
+            accept={accept}
+            className="hidden"
+            onChange={handleChange}
+          />
+        )}
       </div>
     )
   }

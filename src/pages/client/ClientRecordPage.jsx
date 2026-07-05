@@ -388,6 +388,7 @@ export default function ClientRecordPage() {
               onUploaded={(url) => setPhoto(key, url)}
               onDeleted={() => setPhoto(key, null)}
               compact
+              mobileChoice
             />
           ))}
         </div>
