@@ -76,7 +76,9 @@ const ROWS_HEALTH = [
     key: 'water', label: '水分量',
     cell: (w) => {
       if (w?.water_ml == null) return { v: '', c: '' }
-      return { v: `${(w.water_ml / 1000).toFixed(1)}L`, c: w.water_ml >= 1500 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      // 100000以上は誤って1000倍された値と判断して補正（例: 1300000 → 1300ml）
+      const ml = w.water_ml >= 100000 ? Math.round(w.water_ml / 1000) : w.water_ml
+      return { v: `${(ml / 1000).toFixed(1)}L`, c: ml >= 1500 ? 'text-gray-900' : 'text-red-500 font-bold' }
     },
   },
   {

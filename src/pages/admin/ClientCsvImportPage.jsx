@@ -166,8 +166,13 @@ function parseCSV(text) {
     const rowMap  = {}
     headers.forEach((h, idx) => { rowMap[h] = values[idx] ?? '' })
 
+    // [DEBUG] CSV読み取り後の生データ
+    console.log(`[CSV parse] 行${i + 1} 生データ:`, rowMap)
+
     try {
       const record = transformRow(rowMap, i + 1)
+      // [DEBUG] transformRow後の変換済みデータ
+      console.log(`[CSV parse] 行${i + 1} 変換後:`, record)
       rows.push({ _rowNum: i + 1, _original: line, ...record })
     } catch (e) {
       errors.push({ rowNum: i + 1, message: e.message, original: line })
@@ -274,11 +279,25 @@ export default function ClientCsvImportPage() {
       return { ...record, client_id: id }
     })
 
+    // ── [DEBUG] 保存直前のデータを確認 ────────────────────────
+    console.log('[CSVインポート] ① transformRow後の全行データ:')
+    validRows.forEach((r, i) => {
+      console.log(`  行${i + 1}:`, {
+        date: r.date,
+        morning_kg: r.morning_kg,
+        evening_kg: r.evening_kg,
+        menstruation: r.menstruation,
+        bowel_movement: r.bowel_movement,
+        water_ml: r.water_ml,
+        toilet_count: r.toilet_count,
+        sleep_hours: r.sleep_hours,
+      })
+    })
+
     let imported = 0, skipped = 0, failed = 0
 
     try {
       if (conflictMode === 'skip') {
-        // 既存の日付を取得してフィルタリング
         const dates = validRows.map(r => r.date)
         const { data: existing } = await supabase
           .from('weight_logs')
@@ -289,28 +308,53 @@ export default function ClientCsvImportPage() {
         const existingDates = new Set((existing ?? []).map(r => r.date))
         const newRows = validRows.filter(r => !existingDates.has(r.date))
         skipped = validRows.length - newRows.length
+        console.log('[CSVインポート] ② skipモード - 既存日付:', [...existingDates], '→ 新規挿入:', newRows.length, '件')
 
         if (newRows.length > 0) {
-          const { error } = await supabase.from('weight_logs').insert(newRows)
+          const { data: insData, error } = await supabase.from('weight_logs').insert(newRows).select()
+          console.log('[CSVインポート] ③ insert結果:', { insData, error })
           if (error) throw error
           imported = newRows.length
         }
       } else {
-        // overwrite: upsert (requires UNIQUE constraint on client_id + date)
+        // overwrite: upsert (UNIQUE constraint on client_id + date が必要)
         const CHUNK = 100
         for (let i = 0; i < validRows.length; i += CHUNK) {
           const chunk = validRows.slice(i, i + CHUNK)
-          const { error } = await supabase
+          console.log('[CSVインポート] ② upsert送信データ:', chunk)
+          const { data: upsData, error } = await supabase
             .from('weight_logs')
             .upsert(chunk, { onConflict: 'client_id,date' })
-          if (error) throw error
+            .select()
+          console.log('[CSVインポート] ③ upsert結果:', { upsData, error })
+          if (error) {
+            // UNIQUE制約がない場合のわかりやすいエラーメッセージ
+            if (error.message?.includes('unique') || error.message?.includes('constraint') || error.code === '42P10') {
+              throw new Error(
+                'DBにUNIQUE制約が設定されていません。\n' +
+                'Supabase SQL Editor で supabase_weight_logs_unique_fix.sql を実行してから再試行してください。\n\n' +
+                `詳細: ${error.message}`
+              )
+            }
+            throw error
+          }
           imported += chunk.length
         }
       }
 
+      // ── [DEBUG] 保存後にDBから取得して確認 ──────────────────
+      const importedDates = validRows.map(r => r.date)
+      const { data: savedData } = await supabase
+        .from('weight_logs')
+        .select('date,morning_kg,menstruation,bowel_movement,water_ml')
+        .eq('client_id', id)
+        .in('date', importedDates)
+      console.log('[CSVインポート] ④ 保存後DBから取得:', savedData)
+
       setResult({ imported, skipped, failed })
       setStep(2)
     } catch (err) {
+      console.error('[CSVインポート] エラー:', err)
       setResult({ imported, skipped, failed: validRows.length - imported - skipped, errorMessage: err.message })
       setStep(2)
     } finally {
