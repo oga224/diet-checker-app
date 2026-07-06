@@ -154,11 +154,31 @@ export default function ClientOcrImportPage() {
         body: { images: base64Images },
       })
 
-      if (error) throw new Error(error.message ?? 'Edge Function エラー')
+      // Edge Function が非2xxを返した場合（デプロイ未済・CORS等）
+      if (error) {
+        const msg = error.message ?? ''
+        if (msg.includes('non-2xx') || msg.includes('Failed to send')) {
+          throw new Error(
+            'Edge Function に接続できませんでした。\n\n' +
+            '以下を確認してください：\n' +
+            '① ocr-to-csv が Supabase にデプロイ済みか\n' +
+            '② ANTHROPIC_API_KEY が Supabase Secrets に設定済みか\n\n' +
+            `詳細: ${msg}`
+          )
+        }
+        throw new Error(msg || 'Edge Function エラー')
+      }
+
+      // Edge Function 内のエラー（常に200で返すためこちらに入る）
       if (data?.error) throw new Error(data.error)
 
       const extracted = (data?.rows ?? []).filter(r => r.date)
-      if (!extracted.length) throw new Error('データを検出できませんでした。表1が含まれる画像かご確認ください。')
+      if (!extracted.length) throw new Error('データを検出できませんでした。表1（体調・生活記録）が含まれる画像かご確認ください。')
+
+      // 警告があれば保持
+      if (data?.warnings?.length) {
+        setOcrError(`⚠️ 一部の画像で取得失敗：\n${data.warnings.join('\n')}`)
+      }
 
       setRows(extracted)
       setStep(2)
@@ -268,19 +288,26 @@ export default function ClientOcrImportPage() {
 
         {/* エラー表示 */}
         {ocrError && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-start gap-3">
-            <span className="text-red-500 text-xl flex-shrink-0">⚠️</span>
-            <div>
-              <p className="text-sm font-bold text-red-700">エラー</p>
-              <p className="text-sm text-red-600 mt-0.5">{ocrError}</p>
-              {ocrError.includes('ANTHROPIC_API_KEY') && (
-                <p className="text-xs text-red-400 mt-2 font-mono">
-                  → Supabase Dashboard › Edge Functions › Secrets に<br/>
-                  ANTHROPIC_API_KEY を設定してください
-                </p>
+          <div className={`border rounded-xl px-5 py-4 flex items-start gap-3
+            ${ocrError.startsWith('⚠️') ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+            <span className="text-xl flex-shrink-0">{ocrError.startsWith('⚠️') ? '⚠️' : '❌'}</span>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-bold mb-1 ${ocrError.startsWith('⚠️') ? 'text-orange-700' : 'text-red-700'}`}>
+                {ocrError.startsWith('⚠️') ? '一部の画像で警告があります' : 'エラーが発生しました'}
+              </p>
+              {/* 改行を <br> に変換して表示 */}
+              <div className={`text-sm whitespace-pre-line ${ocrError.startsWith('⚠️') ? 'text-orange-600' : 'text-red-600'}`}>
+                {ocrError.replace(/^⚠️\s*/, '')}
+              </div>
+              {ocrError.includes('デプロイ') && (
+                <div className="mt-3 bg-white rounded-lg border border-red-200 px-4 py-3 text-xs text-gray-600 font-mono space-y-1">
+                  <p className="font-bold text-gray-700 font-sans">デプロイコマンド（ターミナルで実行）:</p>
+                  <p>npx supabase functions deploy ocr-to-csv</p>
+                  <p>npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...</p>
+                </div>
               )}
             </div>
-            <button onClick={() => setOcrError(null)} className="ml-auto text-red-300 hover:text-red-500 text-lg">✕</button>
+            <button onClick={() => setOcrError(null)} className="flex-shrink-0 text-gray-300 hover:text-gray-500 text-lg">✕</button>
           </div>
         )}
 

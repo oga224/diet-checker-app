@@ -5,6 +5,15 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// supabase.functions.invoke は非 2xx を error 扱いするため
+// エラーも含めて常に HTTP 200 で返し、body の { error } で判定する
+function ok(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  })
+}
+
 const SYSTEM_PROMPT = `You are a precise data extraction assistant for a Japanese weight management app.
 
 The user will send you a screenshot of a weight management table called "表1" (体調・生活記録 / Health & Lifestyle Records).
@@ -35,28 +44,40 @@ serve(async (req) => {
   }
 
   try {
-    const { images } = await req.json() as { images: string[] }
-
-    if (!Array.isArray(images) || images.length === 0) {
-      return new Response(
-        JSON.stringify({ error: '画像が指定されていません' }),
-        { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } },
-      )
-    }
-
+    // ── APIキー確認 ──────────────────────────────────────────
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
     if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ANTHROPIC_API_KEY がSupabaseのシークレットに設定されていません' }),
-        { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } },
-      )
+      return ok({
+        error: 'ANTHROPIC_API_KEY がSupabaseのシークレットに設定されていません。\n' +
+               'Supabase Dashboard → Edge Functions → Secrets に\n' +
+               'ANTHROPIC_API_KEY を追加してください。',
+      })
     }
 
-    const allRows: Record<string, string>[] = []
+    // ── リクエスト解析 ───────────────────────────────────────
+    let images: string[]
+    try {
+      const body = await req.json()
+      images = body?.images
+    } catch {
+      return ok({ error: 'リクエストの解析に失敗しました（JSON形式が不正）' })
+    }
 
-    for (const dataUrl of images) {
+    if (!Array.isArray(images) || images.length === 0) {
+      return ok({ error: '画像が指定されていません' })
+    }
+
+    // ── 各画像を Claude Haiku で OCR ─────────────────────────
+    const allRows: Record<string, string>[] = []
+    const imageErrors: string[] = []
+
+    for (let idx = 0; idx < images.length; idx++) {
+      const dataUrl = images[idx]
       const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-      if (!match) { console.warn('Invalid data URL, skipping'); continue }
+      if (!match) {
+        imageErrors.push(`画像${idx + 1}: データURL形式が不正`)
+        continue
+      }
       const [, mediaType, base64Data] = match
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -82,7 +103,19 @@ serve(async (req) => {
 
       if (!res.ok) {
         const errText = await res.text()
-        console.error('Anthropic API error:', res.status, errText)
+        console.error(`Anthropic API error (image ${idx + 1}):`, res.status, errText)
+
+        // APIキー認証エラーの場合は即座に返す
+        if (res.status === 401) {
+          return ok({
+            error: 'Anthropic APIキーが無効です（401 Unauthorized）。\n' +
+                   'Supabase Secrets に正しい ANTHROPIC_API_KEY が設定されているか確認してください。',
+          })
+        }
+        if (res.status === 429) {
+          return ok({ error: 'Anthropic APIのレート制限に達しました。少し待ってから再試行してください。' })
+        }
+        imageErrors.push(`画像${idx + 1}: Anthropic API エラー (${res.status})`)
         continue
       }
 
@@ -90,18 +123,24 @@ serve(async (req) => {
       const text: string = json.content?.[0]?.text ?? ''
 
       // JSON配列を抽出（余分なテキストがある場合も対応）
-      const jsonMatch = text.match(/\[[\s\S]*?\]/)
-      if (!jsonMatch) { console.warn('No JSON array in response:', text.slice(0, 300)); continue }
+      const jsonMatch = text.match(/\[[\s\S]*\]/)
+      if (!jsonMatch) {
+        console.warn(`画像${idx + 1}: JSONが見つかりません。応答:`, text.slice(0, 300))
+        imageErrors.push(`画像${idx + 1}: 表データを検出できませんでした`)
+        continue
+      }
 
       try {
         const rows = JSON.parse(jsonMatch[0]) as Record<string, string>[]
+        console.log(`画像${idx + 1}: ${rows.length}行を取得`)
         allRows.push(...rows)
       } catch (e) {
-        console.error('JSON parse failed:', e, jsonMatch[0].slice(0, 200))
+        console.error(`画像${idx + 1}: JSON解析失敗:`, e)
+        imageErrors.push(`画像${idx + 1}: データ解析に失敗しました`)
       }
     }
 
-    // 複数画像で同じ日付がある場合は後から読み込んだ方を優先
+    // ── 重複排除（後から読んだ方を優先）───────────────────────
     const byDate = new Map<string, Record<string, string>>()
     for (const row of allRows) {
       if (row.date && /^\d{4}-\d{2}-\d{2}$/.test(row.date)) {
@@ -110,15 +149,20 @@ serve(async (req) => {
     }
     const deduped = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
 
-    return new Response(
-      JSON.stringify({ rows: deduped, total: deduped.length }),
-      { headers: { ...CORS, 'Content-Type': 'application/json' } },
-    )
+    if (deduped.length === 0 && imageErrors.length > 0) {
+      return ok({
+        error: '全ての画像でデータ取得に失敗しました:\n' + imageErrors.join('\n'),
+      })
+    }
+
+    return ok({
+      rows: deduped,
+      total: deduped.length,
+      warnings: imageErrors.length > 0 ? imageErrors : undefined,
+    })
+
   } catch (err) {
-    console.error('ocr-to-csv error:', err)
-    return new Response(
-      JSON.stringify({ error: String(err) }),
-      { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } },
-    )
+    console.error('ocr-to-csv unexpected error:', err)
+    return ok({ error: `予期しないエラーが発生しました: ${String(err)}` })
   }
 })
