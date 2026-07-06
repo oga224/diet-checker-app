@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { supabase }  from '../../lib/supabase'
 import ClientForm    from '../../components/admin/ClientForm'
@@ -332,9 +333,7 @@ export default function ClientListPage() {
               ＋ 新規登録
             </button>
           )}
-          <Link to="/" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
-            ← チェッカー
-          </Link>
+          <BackButton to="/" label="チェッカー" variant="dark" />
           <button onClick={signOut}
             className="text-sm text-gray-400 hover:text-red-500 transition-colors px-3 py-1.5 border border-gray-200 rounded-lg hover:border-red-200">
             ログアウト

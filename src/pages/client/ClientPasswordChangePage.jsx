@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import { supabase } from '../../lib/supabase'
 
 export default function ClientPasswordChangePage() {
@@ -48,7 +49,7 @@ export default function ClientPasswordChangePage() {
     <div className="min-h-screen bg-gray-50 pb-10">
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3">
-          <Link to={`/client/${id}`} className="text-blue-200 text-2xl p-1">‹</Link>
+          <BackButton to={`/client/${id}`} label="戻る" variant="light" />
           <h1 className="text-xl font-bold">パスワード変更</h1>
         </div>
       </header>

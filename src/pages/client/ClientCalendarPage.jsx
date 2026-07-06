@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import { format, getDaysInMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase } from '../../lib/supabase'
@@ -52,7 +53,7 @@ export default function ClientCalendarPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3">
-          <Link to={`/client/${id}`} className="text-blue-200 text-2xl p-1">‹</Link>
+          <BackButton to={`/client/${id}`} label="戻る" variant="light" />
           <h1 className="text-xl font-bold">カレンダー</h1>
         </div>
         {clientName && <p className="text-blue-200 text-sm mt-1 pl-9">{clientName} さん</p>}

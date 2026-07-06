@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import { format, parseISO } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase }    from '../../lib/supabase'
@@ -334,11 +335,11 @@ export default function ClientRecordPage() {
       {/* ヘッダー */}
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3 mb-1">
-          <button
-            type="button"
+          <BackButton
             onClick={() => isPastEntry ? navigate(`/client/${id}/calendar`) : navigate(`/client/${id}`)}
-            className="text-blue-200 text-2xl p-1"
-          >‹</button>
+            label="戻る"
+            variant="light"
+          />
           <p className="text-blue-100 text-lg">{todayLabel}</p>
           {isPastEntry && (
             <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">過去日</span>

@@ -7,6 +7,8 @@ import App                from './App'
 import LoginPage          from './pages/LoginPage'
 import ClientListPage     from './pages/admin/ClientListPage'
 import ClientDetailPage   from './pages/admin/ClientDetailPage'
+import ClientCsvImportPage from './pages/admin/ClientCsvImportPage'
+import ClientOcrImportPage from './pages/admin/ClientOcrImportPage'
 import ClientTopPage      from './pages/client/ClientTopPage'
 import ClientRecordPage   from './pages/client/ClientRecordPage'
 import ClientHistoryPage  from './pages/client/ClientHistoryPage'
@@ -27,7 +29,9 @@ export default function AppRouter() {
           <Route element={<AdminRoute />}>
             <Route path="/admin"             element={<Navigate to="/admin/clients" replace />} />
             <Route path="/admin/clients"     element={<ClientListPage />} />
-            <Route path="/admin/clients/:id" element={<ClientDetailPage />} />
+            <Route path="/admin/clients/:id"            element={<ClientDetailPage />} />
+            <Route path="/admin/clients/:id/import-csv" element={<ClientCsvImportPage />} />
+            <Route path="/admin/clients/:id/ocr-import" element={<ClientOcrImportPage />} />
           </Route>
 
           {/* お客さん専用ページ（自分のデータのみ） */}

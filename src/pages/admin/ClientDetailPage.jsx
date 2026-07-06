@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -225,13 +226,13 @@ export default function ClientDetailPage() {
   if (error) return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4">
       <p className="text-red-500 text-sm">{error}</p>
-      <Link to="/admin/clients" className="text-blue-500 text-sm hover:underline">← 一覧へ</Link>
+      <Link to="/admin/clients" className="flex items-center gap-1.5 text-blue-500 text-sm hover:underline">← 一覧へ戻る</Link>
     </div>
   )
   if (!client) return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4">
       <p className="text-gray-500">お客さんが見つかりません</p>
-      <Link to="/admin/clients" className="text-blue-500 text-sm hover:underline">← 一覧へ</Link>
+      <Link to="/admin/clients" className="flex items-center gap-1.5 text-blue-500 text-sm hover:underline">← 一覧へ戻る</Link>
     </div>
   )
 
@@ -399,7 +400,7 @@ export default function ClientDetailPage() {
       {/* ── ヘッダー ── */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <Link to="/admin/clients" className="text-sm text-gray-400 hover:text-gray-600">←</Link>
+          <BackButton to="/admin/clients" label="一覧へ" variant="dark" />
           <div>
             {isRestricted ? (
               <>
@@ -424,14 +425,26 @@ export default function ClientDetailPage() {
         <div className="flex items-center gap-2">
           {/* 自店舗のみ記録追加・編集を許可 */}
           {!isRestricted && (
-            <button
-              onClick={() => setEditModal({
-                date: selectedPhotoDate,
-                log: logs.find((l) => l.date === selectedPhotoDate) ?? null,
-              })}
-              className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              ＋ 記録を追加・編集
-            </button>
+            <>
+              <button
+                onClick={() => navigate(`/admin/clients/${id}/ocr-import`)}
+                className="px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors inline-flex items-center gap-1.5">
+                🖼️ 画像からCSV作成
+              </button>
+              <button
+                onClick={() => navigate(`/admin/clients/${id}/import-csv`)}
+                className="px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors inline-flex items-center gap-1.5">
+                📋 CSVインポート
+              </button>
+              <button
+                onClick={() => setEditModal({
+                  date: selectedPhotoDate,
+                  log: logs.find((l) => l.date === selectedPhotoDate) ?? null,
+                })}
+                className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                ＋ 記録を追加・編集
+              </button>
+            </>
           )}
           {/* super_admin: 匿名/実名切替 */}
           {isSuperAdmin && (

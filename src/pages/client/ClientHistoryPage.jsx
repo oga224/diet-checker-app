@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
@@ -257,7 +258,7 @@ export default function ClientHistoryPage() {
     <div className="min-h-screen bg-gray-50 pb-16">
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md">
         <div className="flex items-center gap-3 mb-1">
-          <Link to={`/client/${id}`} className="text-blue-200 text-2xl">‹</Link>
+          <BackButton to={`/client/${id}`} label="戻る" variant="light" />
           <p className="text-blue-100 text-base">履歴・グラフ</p>
         </div>
         <h1 className="text-2xl font-bold pl-8">

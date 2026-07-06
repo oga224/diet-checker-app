@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import BackButton from '../../components/BackButton'
 import { format, parseISO } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { supabase } from '../../lib/supabase'
@@ -200,7 +201,7 @@ export default function ClientCommentsPage() {
     <div className="min-h-screen bg-blue-50 flex flex-col">
       <header className="bg-blue-600 text-white px-5 py-5 shadow-md flex-shrink-0">
         <div className="flex items-center gap-3">
-          <Link to={`/client/${id}`} className="text-blue-200 text-2xl p-1">‹</Link>
+          <BackButton to={`/client/${id}`} label="戻る" variant="light" />
           <div>
             <h1 className="text-xl font-bold">先生とのメッセージ</h1>
             {clientName && <p className="text-blue-200 text-sm">{clientName} さん</p>}
