@@ -45,13 +45,15 @@ function parseIntOrNull(v) {
 }
 
 /**
- * true / ○ / 1 → true, それ以外は null
+ * true / ○ / ◯ / 有 / あり / 1 / yes → true
+ * false / × / 無 / なし / 0 / no → false
+ * 空欄 → null
  */
 function parseBoolOrNull(v) {
   if (!v || v.trim() === '') return null
   const s = v.trim().toLowerCase()
-  if (s === 'true' || s === '○' || s === '1' || s === 'yes') return true
-  if (s === 'false' || s === '×' || s === '0' || s === 'no') return false
+  if (['true', '○', '◯', '1', 'yes', '有', 'あり'].includes(s)) return true
+  if (['false', '×', '0', 'no', '無', 'なし'].includes(s)) return false
   return null
 }
 
@@ -76,11 +78,30 @@ function parseEatingOut(v) {
   }
 }
 
-/** 水分量: リットル → ml */
-function parseWaterMl(v) {
-  const n = parseFloatOrNull(v)
-  if (n === null) return null
-  return Math.round(n * 1000)
+/**
+ * 水分量を ml に変換して返す
+ * lVal: water_liters 列の値（L単位 → ×1000）
+ * mlVal: water_ml 列の値（ml単位 → そのまま使用）
+ * どちらか一方だけ渡す。値が100以上なら ml と判断（安全ガード）
+ */
+function parseWaterToMl(lVal, mlVal) {
+  // water_liters 列が優先
+  const lStr = lVal?.trim()
+  if (lStr && lStr !== '') {
+    const n = parseFloatOrNull(lStr)
+    if (n === null) return null
+    // 安全ガード: 100以上はすでにmlと判断（例: 1300 を誤って liters 列に入れた場合）
+    return n >= 100 ? Math.round(n) : Math.round(n * 1000)
+  }
+  // water_ml 列（ml単位 → そのまま使用）
+  const mlStr = mlVal?.trim()
+  if (mlStr && mlStr !== '') {
+    const n = parseFloatOrNull(mlStr)
+    if (n === null) return null
+    // 安全ガード: 100未満はリットル単位と判断（例: 1.3 を ml 列に入れた場合）
+    return n < 100 ? Math.round(n * 1000) : Math.round(n)
+  }
+  return null
 }
 
 /**
@@ -104,7 +125,7 @@ function transformRow(rowMap, rowNum) {
     throw new Error(`夜体重の値が不正です: ${eveningKg}`)
   }
 
-  const waterMl    = parseWaterMl(rowMap.water_liters ?? rowMap.water_ml)
+  const waterMl    = parseWaterToMl(rowMap.water_liters, rowMap.water_ml)
   const toiletCnt  = parseIntOrNull(rowMap.toilet_count)
   const sleepHours = parseFloatOrNull(rowMap.sleep_hours)
 

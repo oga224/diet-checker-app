@@ -45,19 +45,26 @@ function rowToWeightLog(row, clientId) {
   function intOrNull(v)   { const n = parseInt(v, 10); return isNaN(n) ? null : n }
   function boolOrNull(v)  {
     if (!v || v.trim() === '') return null
-    return v.trim().toLowerCase() === 'true' || v.trim() === '○'
+    const s = v.trim().toLowerCase()
+    if (['true', '○', '◯', '1', 'yes', '有', 'あり'].includes(s)) return true
+    if (['false', '×', '0', 'no', '無', 'なし'].includes(s)) return false
+    return null
   }
   function eatOut(v) {
     const s = (v ?? '').toUpperCase()
     if (!s) return { ate_out_breakfast: false, ate_out_lunch: false, ate_out_dinner: false }
-    if (s === 'TRUE' || s === '○') return { ate_out_breakfast: true, ate_out_lunch: true, ate_out_dinner: true }
+    if (s === 'TRUE' || s === '○' || s === '◯') return { ate_out_breakfast: true, ate_out_lunch: true, ate_out_dinner: true }
     return {
       ate_out_breakfast: s.includes('M') || s.includes('B'),
       ate_out_lunch:     s.includes('L'),
       ate_out_dinner:    s.includes('D'),
     }
   }
+  // OCRはL単位で出力。100以上ならml判断（安全ガード）
   const waterL = floatOrNull(row.water_liters)
+  const waterMl = waterL === null ? null
+    : waterL >= 100 ? Math.round(waterL)          // すでにml
+    : Math.round(waterL * 1000)                    // L→ml変換
   return {
     client_id:      clientId,
     date:           row.date,
@@ -66,7 +73,7 @@ function rowToWeightLog(row, clientId) {
     ...eatOut(row.eating_out),
     menstruation:   boolOrNull(row.period_day),
     bowel_movement: boolOrNull(row.bowel_movement),
-    water_ml:       waterL !== null ? Math.round(waterL * 1000) : null,
+    water_ml:       waterMl,
     toilet_count:   intOrNull(row.toilet_count),
     sleep_hours:    floatOrNull(row.sleep_hours),
   }
