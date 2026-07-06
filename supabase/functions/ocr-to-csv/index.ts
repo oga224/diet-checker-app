@@ -23,8 +23,8 @@ Extract data from these rows ONLY (ignore graphs, 表2, scores, comments, and ph
 - 朝体重 (morning weight in kg) → morning_weight
 - 夜体重 (evening weight in kg) → night_weight
 - 外食 (eating out) → eating_out: use letters M=morning/L=lunch/D=dinner, combinations like "LD" are valid, blank=""
-- 生理 (menstruation) → period_day: ○=true, blank=""
-- 排便 (bowel movement) → bowel_movement: ○=true, blank=""
+- 生理 (menstruation) → period_day: if ○/〇/● mark present output "true", blank=""
+- 排便 (bowel movement) → bowel_movement: if ○/〇/● mark present output "true", blank=""
 - 水分量 (water intake in liters) → water_liters: e.g. "1.5", blank=""
 - トイレ (toilet count) → toilet_count: number as string, blank=""
 - 睡眠 (sleep hours) → sleep_hours: number as string, blank=""

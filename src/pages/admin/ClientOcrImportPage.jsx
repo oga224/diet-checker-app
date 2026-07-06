@@ -46,7 +46,7 @@ function rowToWeightLog(row, clientId) {
   function boolOrNull(v)  {
     if (!v || v.trim() === '') return null
     const s = v.trim().toLowerCase()
-    if (['true', '○', '◯', '1', 'yes', '有', 'あり'].includes(s)) return true
+    if (['true', '○', '◯', '〇', '1', 'yes', '有', 'あり'].includes(s)) return true
     if (['false', '×', '0', 'no', '無', 'なし'].includes(s)) return false
     return null
   }
