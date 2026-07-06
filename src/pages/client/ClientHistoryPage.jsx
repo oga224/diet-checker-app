@@ -41,9 +41,17 @@ const HEALTH_ROWS = [
       return p.length ? { v: p.join(''), c: 'text-orange-600 font-medium' } : { v: '', c: '' }
     }},
   { key: 'menstruation', label: '生理',
-    cell: (w) => w?.menstruation === true ? { v: '○', c: 'text-pink-500' } : { v: '', c: '' } },
+    cell: (w) => {
+      const v = w?.menstruation
+      const has = v === true || v === 'true' || v === '○' || v === '◯' || v === '〇' || v === 1 || v === '1'
+      return has ? { v: '○', c: 'text-pink-500' } : { v: '', c: '' }
+    }},
   { key: 'bowel', label: '排便',
-    cell: (w) => w?.bowel_movement === true ? { v: '○', c: 'text-gray-900' } : { v: '', c: '' } },
+    cell: (w) => {
+      const v = w?.bowel_movement
+      const has = v === true || v === 'true' || v === '○' || v === '◯' || v === '〇' || v === 1 || v === '1'
+      return has ? { v: '○', c: 'text-gray-900' } : { v: '', c: '' }
+    }},
   { key: 'water', label: '水分量',
     cell: (w) => {
       if (w?.water_ml == null) return { v: '', c: '' }
