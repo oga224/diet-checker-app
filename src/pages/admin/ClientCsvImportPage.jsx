@@ -271,6 +271,7 @@ export default function ClientCsvImportPage() {
 
   // ── インポート実行 ─────────────────────────────────────────
   async function handleImport() {
+    console.log('★★★★★ SAVE START ★★★★★', { parsed_rows: parsed?.rows?.length })
     if (!parsed?.rows.length) return
     setImporting(true)
 
@@ -315,12 +316,12 @@ export default function ClientCsvImportPage() {
         const CHUNK = 100
         for (let i = 0; i < validRows.length; i += CHUNK) {
           const chunk = validRows.slice(i, i + CHUNK)
-          console.log('[CSVインポート] ② upsert送信:', chunk.map(x => ({ date: x.date, bowel_movement: x.bowel_movement, menstruation: x.menstruation })))
+          console.log('★★★★★ UPSERT ★★★★★', chunk.map(x => ({ date: x.date, bowel_movement: x.bowel_movement, menstruation: x.menstruation })))
           const { data: upsData, error } = await supabase
             .from('weight_logs')
             .upsert(chunk, { onConflict: 'client_id,date' })
             .select()
-          console.log('[CSVインポート] ③ upsert結果:', { upsData, error })
+          console.log('★★★★★ UPSERT RESULT ★★★★★', error, upsData)
           if (error) {
             // UNIQUE制約がない場合のわかりやすいエラーメッセージ
             if (error.message?.includes('unique') || error.message?.includes('constraint') || error.code === '42P10') {
