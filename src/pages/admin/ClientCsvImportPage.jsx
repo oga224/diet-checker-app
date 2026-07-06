@@ -282,16 +282,10 @@ export default function ClientCsvImportPage() {
     // ── [DEBUG] 保存直前のデータを確認 ────────────────────────
     console.log('[CSVインポート] ① transformRow後の全行データ:')
     validRows.forEach((r, i) => {
-      console.log(`  行${i + 1}:`, {
-        date: r.date,
-        morning_kg: r.morning_kg,
-        evening_kg: r.evening_kg,
-        menstruation: r.menstruation,
-        bowel_movement: r.bowel_movement,
-        water_ml: r.water_ml,
-        toilet_count: r.toilet_count,
-        sleep_hours: r.sleep_hours,
-      })
+      console.log(`  行${i + 1} transform後:`,
+        'bowel_movement=', r.bowel_movement, typeof r.bowel_movement,
+        'menstruation=', r.menstruation, typeof r.menstruation,
+      )
     })
 
     let imported = 0, skipped = 0, failed = 0
@@ -321,7 +315,7 @@ export default function ClientCsvImportPage() {
         const CHUNK = 100
         for (let i = 0; i < validRows.length; i += CHUNK) {
           const chunk = validRows.slice(i, i + CHUNK)
-          console.log('[CSVインポート] ② upsert送信データ:', chunk)
+          console.log('[CSVインポート] ② upsert送信:', chunk.map(x => ({ date: x.date, bowel_movement: x.bowel_movement, menstruation: x.menstruation })))
           const { data: upsData, error } = await supabase
             .from('weight_logs')
             .upsert(chunk, { onConflict: 'client_id,date' })
