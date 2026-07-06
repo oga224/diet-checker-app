@@ -146,11 +146,31 @@ function transformRow(rowMap, rowNum) {
 /**
  * CSVテキスト全体を解析して行リストとエラーリストを返す
  */
+// BOM・全角スペース・前後空白・改行を除去して小文字化
+function normalizeHeader(s) {
+  return s
+    .replace(/^﻿/, '')      // BOM
+    .replace(/[　 ]/g, ' ') // 全角スペース・NBSP → 半角
+    .trim()
+    .replace(/\s+/g, '_')        // 内部の空白 → _
+    .toLowerCase()
+}
+
 function parseCSV(text) {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n')
   if (lines.length < 2) return { rows: [], errors: [{ rowNum: 1, message: 'データ行がありません' }] }
 
-  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase())
+  const rawHeaders = parseCSVLine(lines[0])
+  const headers = rawHeaders.map(normalizeHeader)
+
+  // [DEBUG] ヘッダー正規化結果
+  console.log('[CSV parse] ヘッダー原文:', rawHeaders)
+  console.log('[CSV parse] ヘッダー正規化後:', headers)
+  rawHeaders.forEach((h, i) => {
+    const codes = [...h].map(c => c.charCodeAt(0).toString(16).padStart(4,'0')).join(' ')
+    console.log(`  [${i}] "${h}" → "${headers[i]}"  (chars: ${codes})`)
+  })
+
   if (!headers.includes('date')) {
     return { rows: [], errors: [{ rowNum: 1, message: 'ヘッダー行に "date" 列が見つかりません' }] }
   }
@@ -166,7 +186,14 @@ function parseCSV(text) {
     const rowMap  = {}
     headers.forEach((h, idx) => { rowMap[h] = values[idx] ?? '' })
 
-    // [DEBUG] CSV読み取り後の生データ
+    // [DEBUG] CSV読み取り後の生データ（1行目のみ詳細）
+    if (i === 1) {
+      console.log('[CSV parse] 行2 row keys:', Object.keys(rowMap))
+      console.log('[CSV parse] 行2 bowel raw:', JSON.stringify(rowMap.bowel_movement))
+      console.log('[CSV parse] 行2 period_day raw:', JSON.stringify(rowMap.period_day))
+      console.log('[CSV parse] 行2 menstruation raw:', JSON.stringify(rowMap.menstruation))
+      console.log('[CSV parse] 行2 full rowMap:', rowMap)
+    }
     console.log(`[CSV parse] 行${i + 1} 生データ:`, rowMap)
 
     try {
