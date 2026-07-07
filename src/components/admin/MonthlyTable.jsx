@@ -33,11 +33,11 @@ function buildAllDays(startY, startM, endY, endM) {
 const ROWS_HEALTH = [
   {
     key: 'morning_kg', label: '朝体重',
-    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-900' } : { v: '', c: '' },
+    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-800 text-base' } : { v: '', c: '' },
   },
   {
     key: 'evening_kg', label: '夜体重',
-    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-900' } : { v: '', c: '' },
+    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-800 text-base' } : { v: '', c: '' },
   },
   {
     key: 'weight_diff', label: '朝→夜差',
@@ -46,7 +46,7 @@ const ROWS_HEALTH = [
       const d = +(w.evening_kg - w.morning_kg).toFixed(1)
       return {
         v: `${d >= 0 ? '+' : ''}${d}`,
-        c: d >= 0.6 ? 'text-red-500 font-bold' : 'text-green-600 font-bold',
+        c: d >= 0.6 ? 'text-red-500' : 'text-gray-800',
       }
     },
   },
@@ -57,7 +57,7 @@ const ROWS_HEALTH = [
       if (w?.ate_out_breakfast) p.push('M')
       if (w?.ate_out_lunch)     p.push('L')
       if (w?.ate_out_dinner)    p.push('D')
-      return p.length ? { v: p.join(''), c: 'text-orange-600 font-medium' } : { v: '', c: '' }
+      return p.length ? { v: p.join(''), c: 'text-gray-800' } : { v: '', c: '' }
     },
   },
   {
@@ -65,7 +65,7 @@ const ROWS_HEALTH = [
     cell: (w) => {
       const v = w?.menstruation
       const has = v === true || v === 'true' || v === '○' || v === '◯' || v === '〇' || v === 1 || v === '1'
-      return has ? { v: '○', c: 'text-pink-500' } : { v: '', c: '' }
+      return has ? { v: '○', c: 'text-gray-800' } : { v: '', c: '' }
     },
   },
   {
@@ -73,7 +73,7 @@ const ROWS_HEALTH = [
     cell: (w) => {
       const v = w?.bowel_movement
       const has = v === true || v === 'true' || v === '○' || v === '◯' || v === '〇' || v === 1 || v === '1'
-      return has ? { v: '○', c: 'text-gray-900' } : { v: '', c: '' }
+      return has ? { v: '○', c: 'text-gray-800' } : { v: '', c: '' }
     },
   },
   {
@@ -82,21 +82,21 @@ const ROWS_HEALTH = [
       if (w?.water_ml == null) return { v: '', c: '' }
       // 100000以上は誤って1000倍された値と判断して補正（例: 1300000 → 1300ml）
       const ml = w.water_ml >= 100000 ? Math.round(w.water_ml / 1000) : w.water_ml
-      return { v: `${(ml / 1000).toFixed(1)}L`, c: ml >= 1500 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      return { v: `${(ml / 1000).toFixed(1)}L`, c: ml >= 1500 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
   {
     key: 'toilet', label: 'トイレ',
     cell: (w) => {
       if (w?.toilet_count == null) return { v: '', c: '' }
-      return { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      return { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
   {
     key: 'sleep', label: '睡眠',
     cell: (w) => {
       if (w?.sleep_hours == null) return { v: '', c: '' }
-      return { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-900' : 'text-red-500 font-bold' }
+      return { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
 ]
@@ -170,7 +170,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
         <thead>
           <tr>
             {/* 左固定：項目名 */}
-            <th className="sticky left-0 z-20 bg-gray-50 text-left text-gray-400 font-medium
+            <th className="sticky left-0 z-20 bg-gray-50 text-left text-gray-600 font-medium
               px-3 py-2 border-r border-b border-gray-200 whitespace-nowrap min-w-[5rem]">
               項目
             </th>
@@ -194,7 +194,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
                       : isSelected
                         ? 'bg-blue-100 border-b-2 border-b-blue-500 text-blue-800 font-bold'
                         : hasDat ? 'bg-gray-50/60 border-b border-gray-200' : 'border-b border-gray-200',
-                    !isToday && !isSelected && isWE ? 'text-red-500' : !isToday && !isSelected ? 'text-gray-700' : '',
+                    !isToday && !isSelected && isWE ? 'text-red-500' : !isToday && !isSelected ? 'text-gray-800' : '',
                     onDateClick ? 'cursor-pointer hover:opacity-80' : '',
                   ].join(' ')}
                 >
@@ -205,7 +205,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
                     </div>
                   )}
                   <div className="font-medium leading-none">{day}</div>
-                  <div className={`leading-none mt-0.5 ${isToday ? 'text-yellow-600' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>{dow}</div>
+                  <div className={`leading-none mt-0.5 ${isToday ? 'text-yellow-600' : isSelected ? 'text-blue-600' : isWE ? 'text-red-400' : 'text-gray-700'}`}>{dow}</div>
                 </th>
               )
             })}
@@ -214,7 +214,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
         <tbody>
           {rows.map((row, ri) => (
             <tr key={row.key} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}>
-              <td className={`sticky left-0 z-10 px-3 py-2 font-medium text-gray-500
+              <td className={`sticky left-0 z-10 px-3 py-2 font-medium text-gray-800
                 border-r border-gray-200 whitespace-nowrap
                 ${ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                 {row.label}
@@ -428,8 +428,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
               scrollRef={scrollRef1} onScroll={handleScroll1}
               onDateClick={onDateClick} />
             <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
-              <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下・排便なし
-              　<span className="text-green-600 font-medium">緑字</span>＝朝→夜差 +0.5kg以内
+              <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下
             </div>
           </>
         )}
