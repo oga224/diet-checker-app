@@ -50,11 +50,16 @@ function parseIntOrNull(v) {
  * 空欄 → null
  */
 function parseBoolOrNull(v) {
+  console.log('[parseBoolOrNull] input =', v, typeof v)
+  const normalized = String(v ?? '').trim().toLowerCase()
+  console.log('[parseBoolOrNull] normalized =', normalized)
+  console.log('[parseBoolOrNull] chars =', [...normalized].map(c => c.charCodeAt(0).toString(16)))
+  const trueList = ['true', '1', 'yes', '○', '◯', '〇', '有', 'あり']
+  console.log('[parseBoolOrNull] includes =', trueList.includes(normalized))
   if (!v || v.trim() === '') return null
-  const s = v.trim().toLowerCase()
   // ○ U+25CB  ◯ U+25EF  〇 U+3007 — 見た目が似ているが別文字
-  if (['true', '○', '◯', '〇', '1', 'yes', '有', 'あり'].includes(s)) return true
-  if (['false', '×', '0', 'no', '無', 'なし'].includes(s)) return false
+  if (trueList.includes(normalized)) return true
+  if (['false', '×', '0', 'no', '無', 'なし'].includes(normalized)) return false
   return null
 }
 
@@ -135,8 +140,8 @@ function transformRow(rowMap, rowNum) {
     morning_kg:        morningKg,
     evening_kg:        eveningKg,
     ...parseEatingOut(rowMap.eating_out),
-    menstruation:      parseBoolOrNull(rowMap.period_day ?? rowMap.menstruation),
-    bowel_movement:    parseBoolOrNull(rowMap.bowel_movement),
+    menstruation:      (console.log('before parse menstruation', rowMap.period_day ?? rowMap.menstruation), parseBoolOrNull(rowMap.period_day ?? rowMap.menstruation)),
+    bowel_movement:    (console.log('before parse bowel_movement', rowMap.bowel_movement), parseBoolOrNull(rowMap.bowel_movement)),
     water_ml:          waterMl,
     toilet_count:      toiletCnt,
     sleep_hours:       sleepHours,
