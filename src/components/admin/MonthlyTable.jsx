@@ -29,15 +29,24 @@ function buildAllDays(startY, startM, endY, endM) {
   return days
 }
 
+// 数字＋小さい単位を組み合わせるヘルパー
+function numUnit(num, unit) {
+  return <>{num}<span className="text-xs align-baseline ml-px">{unit}</span></>
+}
+
 // ── 表1 行定義：体調・生活記録 ───────────────────────────────
 const ROWS_HEALTH = [
   {
     key: 'morning_kg', label: '朝体重',
-    cell: (w) => w?.morning_kg != null ? { v: `${w.morning_kg}`, c: 'text-gray-800 text-base' } : { v: '', c: '' },
+    cell: (w) => w?.morning_kg != null
+      ? { v: numUnit(w.morning_kg, 'kg'), c: 'text-gray-800 text-base' }
+      : { v: '', c: '' },
   },
   {
     key: 'evening_kg', label: '夜体重',
-    cell: (w) => w?.evening_kg != null ? { v: `${w.evening_kg}`, c: 'text-gray-800 text-base' } : { v: '', c: '' },
+    cell: (w) => w?.evening_kg != null
+      ? { v: numUnit(w.evening_kg, 'kg'), c: 'text-gray-800 text-base' }
+      : { v: '', c: '' },
   },
   {
     key: 'weight_diff', label: '朝→夜差',
@@ -82,21 +91,22 @@ const ROWS_HEALTH = [
       if (w?.water_ml == null) return { v: '', c: '' }
       // 100000以上は誤って1000倍された値と判断して補正（例: 1300000 → 1300ml）
       const ml = w.water_ml >= 100000 ? Math.round(w.water_ml / 1000) : w.water_ml
-      return { v: `${(ml / 1000).toFixed(1)}L`, c: ml >= 1500 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      const num = (ml / 1000).toFixed(1)
+      return { v: numUnit(num, 'L'), c: ml >= 1500 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
   {
     key: 'toilet', label: 'トイレ',
     cell: (w) => {
       if (w?.toilet_count == null) return { v: '', c: '' }
-      return { v: `${w.toilet_count}回`, c: w.toilet_count >= 10 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      return { v: numUnit(w.toilet_count, '回'), c: w.toilet_count >= 10 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
   {
     key: 'sleep', label: '睡眠',
     cell: (w) => {
       if (w?.sleep_hours == null) return { v: '', c: '' }
-      return { v: `${w.sleep_hours}h`, c: w.sleep_hours >= 5.5 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      return { v: numUnit(w.sleep_hours, 'h'), c: w.sleep_hours >= 5.5 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
     },
   },
 ]
@@ -214,7 +224,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
         <tbody>
           {rows.map((row, ri) => (
             <tr key={row.key} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}>
-              <td className={`sticky left-0 z-10 px-3 py-2 font-medium text-gray-800
+              <td className={`sticky left-0 z-10 px-3 py-2 font-semibold text-gray-800
                 border-r border-gray-200 whitespace-nowrap
                 ${ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                 {row.label}
