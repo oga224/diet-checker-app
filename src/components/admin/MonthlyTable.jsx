@@ -47,7 +47,7 @@ const ROWS_HEALTH = [
     cell: (w) => {
       if (w?.evening_kg == null) return { v: '', c: '' }
       const diff = w.morning_kg != null ? +(w.evening_kg - w.morning_kg).toFixed(1) : null
-      const isOver = diff !== null && diff >= 0.5
+      const isOver = diff !== null && diff >= 0.6
       return { v: `${w.evening_kg}`, c: isOver ? 'text-red-500 text-base' : 'text-gray-800 text-base' }
     },
   },
