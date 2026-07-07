@@ -39,14 +39,17 @@ const ROWS_HEALTH = [
   {
     key: 'morning_kg', label: '朝体重',
     cell: (w) => w?.morning_kg != null
-      ? { v: numUnit(w.morning_kg, 'kg'), c: 'text-gray-800 text-base' }
+      ? { v: `${w.morning_kg}`, c: 'text-gray-800 text-base' }
       : { v: '', c: '' },
   },
   {
     key: 'evening_kg', label: '夜体重',
-    cell: (w) => w?.evening_kg != null
-      ? { v: numUnit(w.evening_kg, 'kg'), c: 'text-gray-800 text-base' }
-      : { v: '', c: '' },
+    cell: (w) => {
+      if (w?.evening_kg == null) return { v: '', c: '' }
+      const diff = w.morning_kg != null ? +(w.evening_kg - w.morning_kg).toFixed(1) : null
+      const isOver = diff !== null && diff >= 0.5
+      return { v: `${w.evening_kg}`, c: isOver ? 'text-red-500 text-base' : 'text-gray-800 text-base' }
+    },
   },
   {
     key: 'weight_diff', label: '朝→夜差',
