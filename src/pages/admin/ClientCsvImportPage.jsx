@@ -52,7 +52,8 @@ function parseIntOrNull(v) {
 function parseBoolOrNull(v) {
   if (!v || v.trim() === '') return null
   const s = v.trim().toLowerCase()
-  if (['true', '○', '◯', '1', 'yes', '有', 'あり'].includes(s)) return true
+  // ○ U+25CB  ◯ U+25EF  〇 U+3007 — 見た目が似ているが別文字
+  if (['true', '○', '◯', '〇', '1', 'yes', '有', 'あり'].includes(s)) return true
   if (['false', '×', '0', 'no', '無', 'なし'].includes(s)) return false
   return null
 }
