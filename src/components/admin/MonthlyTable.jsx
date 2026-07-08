@@ -176,9 +176,9 @@ const ROWS_MEAL = [
 // ── テーブル本体（連続日付対応版） ───────────────────────────
 const DOW = ['日','月','火','水','木','金','土']
 
-function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, onScroll, onDateClick }) {
+function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, onScroll, onDateClick, scrollClass }) {
   return (
-    <div className="overflow-x-auto" ref={scrollRef} onScroll={onScroll}>
+    <div className={`overflow-x-auto${scrollClass ? ` ${scrollClass}` : ''}`} ref={scrollRef} onScroll={onScroll}>
       <table className="border-collapse text-xs" style={{ minWidth: `${allDays.length * 44 + 80}px` }}>
         <thead>
           <tr>
@@ -189,6 +189,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
             </th>
             {allDays.map(({ year, month, day, dateStr }) => {
               const isFirst    = day === 1
+              const ym         = `${year}-${pad(month)}`
               const dow        = DOW[new Date(year, month - 1, day).getDay()]
               const isWE       = [0, 6].includes(new Date(year, month - 1, day).getDay())
               const isToday    = dateStr === todayStr
@@ -196,8 +197,9 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
               const hasDat     = !!wMap[dateStr]
               return (
                 <th key={dateStr}
+                  data-ym={ym}
                   data-today={isToday ? 'true' : undefined}
-                  data-month={isFirst ? `${year}-${pad(month)}` : undefined}
+                  data-month={isFirst ? ym : undefined}
                   onClick={() => onDateClick?.(dateStr, wMap[dateStr] ?? null)}
                   className={[
                     'text-center px-1 py-1.5 border-b min-w-[2.8rem]',
@@ -274,7 +276,8 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
   const scrollRef1   = useRef(null)
   const scrollRef2   = useRef(null)
   const isSyncing    = useRef(false)
-  const initialScroll = useRef(false) // 初回自動スクロール完了フラグ
+  const initialScroll = useRef(false)
+  const [visibleMonthLabel, setVisibleMonthLabel] = useState('')
 
   const todayStr = format(now, 'yyyy-MM-dd')
 
@@ -344,7 +347,8 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     setTimeout(() => {
       scrollToDate(todayStr, true) // 今日を中央に
       initialScroll.current = true
-    }, 120)
+      setVisibleMonthLabel(calcVisibleMonths(scrollRef1.current))
+    }, 180)
   }, [loading, allDays])
 
   // ── 日付位置へスクロール ──────────────────────────────────
@@ -376,12 +380,32 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     if (scrollRef2.current) scrollRef2.current.scrollLeft = left
   }
 
+  // ── 可視月ラベルを計算 ──────────────────────────────────
+  function calcVisibleMonths(container) {
+    if (!container) return ''
+    const { scrollLeft, clientWidth } = container
+    const stickyW  = 88
+    const viewLeft  = scrollLeft + stickyW
+    const viewRight = scrollLeft + clientWidth
+    const ths = Array.from(container.querySelectorAll('thead th[data-ym]'))
+    const seen = new Set()
+    ths.forEach(th => {
+      const l = th.offsetLeft, r = l + th.offsetWidth
+      if (r > viewLeft && l < viewRight) seen.add(th.getAttribute('data-ym'))
+    })
+    if (seen.size === 0) return ''
+    const sorted = [...seen].sort()
+    const fmt = ym => `${parseInt(ym.split('-')[1])}月`
+    return sorted.length === 1 ? fmt(sorted[0]) : `${fmt(sorted[0])}〜${fmt(sorted[sorted.length - 1])}`
+  }
+
   // ── 同期スクロール ──────────────────────────────────────
   function handleScroll1(e) {
     if (isSyncing.current) return
     isSyncing.current = true
     if (scrollRef2.current) scrollRef2.current.scrollLeft = e.currentTarget.scrollLeft
     requestAnimationFrame(() => { isSyncing.current = false })
+    setVisibleMonthLabel(calcVisibleMonths(e.currentTarget))
   }
   function handleScroll2(e) {
     if (isSyncing.current) return
@@ -425,13 +449,25 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
 
   return (
     <>
+      {/* スクロールバーCSS（表1専用） */}
+      <style>{`
+        .table1-scroll::-webkit-scrollbar { height: 8px; }
+        .table1-scroll::-webkit-scrollbar-track { background: #fef3c7; border-radius: 4px; }
+        .table1-scroll::-webkit-scrollbar-thumb { background: #b45309; border-radius: 4px; }
+        .table1-scroll::-webkit-scrollbar-thumb:hover { background: #92400e; }
+        .table1-scroll { scrollbar-width: thin; scrollbar-color: #b45309 #fef3c7; }
+      `}</style>
+
       {/* ── 表1：体調・生活記録 ── */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">
           <div className="flex items-center justify-center mb-2">{Nav}</div>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-600">表1：体調・生活記録</h2>
-            {rangeLabel && <p className="text-xs text-gray-400">{rangeLabel}</p>}
+            {/* 現在表示中の月ラベル */}
+            <p className="text-base font-semibold text-gray-700 min-w-[5rem] text-right">
+              {visibleMonthLabel}
+            </p>
           </div>
         </div>
         {loading ? Spinner : (
@@ -439,7 +475,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
             <Table rows={ROWS_HEALTH} allDays={allDays} wMap={wMap} mMap={mMap}
               todayStr={todayStr} selectedDate={selectedDate}
               scrollRef={scrollRef1} onScroll={handleScroll1}
-              onDateClick={onDateClick} />
+              onDateClick={onDateClick} scrollClass="table1-scroll" />
             <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
               <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下
             </div>
