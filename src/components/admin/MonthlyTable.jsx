@@ -451,7 +451,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     <>
       {/* スクロールバーCSS（表1専用） */}
       <style>{`
-        .table1-scroll::-webkit-scrollbar { height: 8px; }
+        .table1-scroll::-webkit-scrollbar { height: 16px; }
         .table1-scroll::-webkit-scrollbar-track { background: #fef3c7; border-radius: 4px; }
         .table1-scroll::-webkit-scrollbar-thumb { background: #b45309; border-radius: 4px; }
         .table1-scroll::-webkit-scrollbar-thumb:hover { background: #92400e; }
