@@ -144,7 +144,7 @@ function MealToggle3({ label, eaten, ateOut, onChange }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 数値入力（水分・睡眠・トイレ）
+// 数値入力（水分・睡眠）
 // ─────────────────────────────────────────────────────────────
 function NumberRow({ emoji, label, value, onChange, unit, min, max, step = '1', placeholder }) {
   return (
@@ -161,6 +161,66 @@ function NumberRow({ emoji, label, value, onChange, unit, min, max, step = '1', 
           className="text-4xl font-bold text-center text-gray-800 bg-gray-50 border-b-4 border-gray-300 focus:border-blue-400 outline-none flex-1 min-w-0 py-2 rounded-t-xl"
         />
         <span className="text-xl text-gray-400 font-bold mb-2 flex-shrink-0">{unit}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// トイレ回数入力（－ 数字 ＋ カウンター）
+// ─────────────────────────────────────────────────────────────
+function ToiletCountRow({ value, onChange }) {
+  const num = value === '' ? '' : Number(value)
+
+  function increment() {
+    const n = value === '' ? 1 : Math.min(30, Number(value) + 1)
+    onChange(String(n))
+  }
+  function decrement() {
+    const n = value === '' ? 0 : Math.max(0, Number(value) - 1)
+    onChange(String(n))
+  }
+
+  return (
+    <div className="py-4 border-b border-gray-100">
+      <p className="text-base font-bold text-gray-600 mb-3">🚽 トイレ</p>
+      <div className="flex items-center gap-3">
+        {/* －ボタン */}
+        <button
+          type="button"
+          onClick={decrement}
+          className="w-12 h-12 rounded-xl bg-gray-100 active:bg-gray-300 text-gray-600 text-2xl font-bold
+            flex items-center justify-center transition-colors select-none flex-shrink-0"
+          aria-label="マイナス"
+        >
+          −
+        </button>
+
+        {/* 数字入力 */}
+        <div className="flex items-end gap-2 flex-1 justify-center">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0" max="30" step="1"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="6"
+            className="text-4xl font-bold text-center text-gray-800 bg-gray-50 border-b-4 border-gray-300
+              focus:border-blue-400 outline-none w-24 py-2 rounded-t-xl"
+          />
+          <span className="text-xl text-gray-400 font-bold mb-2">回</span>
+        </div>
+
+        {/* ＋ボタン */}
+        <button
+          type="button"
+          onClick={increment}
+          className="w-12 h-12 rounded-xl bg-gray-100 active:bg-gray-300 text-gray-600 text-2xl font-bold
+            flex items-center justify-center transition-colors select-none flex-shrink-0"
+          aria-label="プラス"
+        >
+          ＋
+        </button>
       </div>
     </div>
   )
@@ -402,9 +462,8 @@ export default function ClientRecordPage() {
         <NumberRow emoji="😴" label="睡眠" value={form.sleep_hours}
           onChange={(v) => set('sleep_hours', v)} unit="時間"
           min="0" max="24" step="0.5" placeholder="7" />
-        <NumberRow emoji="🚽" label="トイレ" value={form.toilet_count}
-          onChange={(v) => set('toilet_count', v)} unit="回"
-          min="0" max="30" placeholder="6" />
+        <ToiletCountRow value={form.toilet_count}
+          onChange={(v) => set('toilet_count', v)} />
 
         <div className="mt-5 space-y-3">
           <BigToggle label="💩 排便" value={form.bowel_movement}
