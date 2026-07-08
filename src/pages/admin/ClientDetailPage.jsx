@@ -699,15 +699,15 @@ export default function ClientDetailPage() {
             3. 体重グラフ
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">体重グラフ</h2>
-            {/* 期間切り替え */}
+          {/* ヘッダー：タイトル＋期間ボタン */}
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold text-gray-500">体重グラフ</h2>
             <div className="flex gap-1">
               {PERIODS.map((p) => (
                 <button key={p.key} onClick={() => setChartPeriod(p.key)}
                   className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors
                     ${chartPeriod === p.key
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                   {p.label}
                 </button>
@@ -715,20 +715,87 @@ export default function ClientDetailPage() {
             </div>
           </div>
 
+          {/* 凡例（上部中央） */}
+          {chartData.length > 0 && (
+            <div className="flex justify-center gap-6 mb-2">
+              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: '#f97316' }}>
+                <span className="inline-block w-6 h-0.5 rounded-full" style={{ background: '#f97316' }} />
+                <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#f97316' }} />
+                朝の体重
+              </span>
+              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: '#38bdf8' }}>
+                <span className="inline-block w-6 h-0.5 rounded-full" style={{ background: '#38bdf8' }} />
+                <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#38bdf8' }} />
+                夜の体重
+              </span>
+            </div>
+          )}
+
           {chartData.length === 0 ? (
             <p className="text-center py-10 text-gray-400 text-sm">この期間の記録がありません</p>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }}
-                  interval={chartData.length > 60 ? Math.floor(chartData.length / 20) : 'preserveStartEnd'} />
-                <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }}
-                  tickFormatter={(v) => `${v}kg`} width={55} />
-                <Tooltip formatter={(v) => `${v} kg`} />
-                <Legend />
-                <Line type="monotone" dataKey="朝" stroke="#3b82f6" strokeWidth={2} dot={chartData.length < 60} connectNulls />
-                <Line type="monotone" dataKey="夜" stroke="#f97316" strokeWidth={2} dot={chartData.length < 60} connectNulls strokeDasharray="5 4" />
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                {/* 薄い破線グリッド */}
+                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  interval={
+                    chartData.length > 90 ? Math.ceil(chartData.length / 18) :
+                    chartData.length > 30 ? Math.ceil(chartData.length / 12) :
+                    'preserveStartEnd'
+                  }
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={([min, max]) => {
+                    const pad = 0.5
+                    return [Math.floor((min - pad) * 10) / 10, Math.ceil((max + pad) * 10) / 10]
+                  }}
+                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tickFormatter={(v) => `${v}kg`}
+                  width={52}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                {/* カスタムツールチップ */}
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null
+                    const asa  = payload.find(p => p.dataKey === '朝')
+                    const yoru = payload.find(p => p.dataKey === '夜')
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-sm min-w-[140px]">
+                        <p className="font-semibold text-gray-700 mb-1.5">日付：{label}</p>
+                        {asa  && <p style={{ color: '#f97316' }} className="font-medium">朝の体重：{asa.value} kg</p>}
+                        {yoru && <p style={{ color: '#38bdf8' }} className="font-medium">夜の体重：{yoru.value} kg</p>}
+                      </div>
+                    )
+                  }}
+                />
+                {/* 朝：オレンジ */}
+                <Line
+                  type="linear"
+                  dataKey="朝"
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  dot={{ r: 3.5, fill: '#f97316', strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: '#f97316' }}
+                  connectNulls
+                  legendType="none"
+                />
+                {/* 夜：水色 */}
+                <Line
+                  type="linear"
+                  dataKey="夜"
+                  stroke="#38bdf8"
+                  strokeWidth={2}
+                  dot={{ r: 3.5, fill: '#38bdf8', strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: '#38bdf8' }}
+                  connectNulls
+                  legendType="none"
+                />
               </LineChart>
             </ResponsiveContainer>
           )}
