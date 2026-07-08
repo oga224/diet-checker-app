@@ -449,15 +449,6 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
 
   return (
     <>
-      {/* スクロールバーCSS（表1専用） */}
-      <style>{`
-        .table1-scroll::-webkit-scrollbar { height: 16px; }
-        .table1-scroll::-webkit-scrollbar-track { background: #fef3c7; border-radius: 4px; }
-        .table1-scroll::-webkit-scrollbar-thumb { background: #b45309; border-radius: 4px; }
-        .table1-scroll::-webkit-scrollbar-thumb:hover { background: #92400e; }
-        .table1-scroll { scrollbar-width: thin; scrollbar-color: #b45309 #fef3c7; }
-      `}</style>
-
       {/* ── 表1：体調・生活記録 ── */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">

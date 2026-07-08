@@ -81,10 +81,32 @@ input[type='number']::-webkit-outer-spin-button {
   animation: slideIn 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 4px; }
+/* ── Scrollbar（全体デフォルト） ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: rgba(201, 169, 110, 0.3);
   border-radius: 2px;
+}
+
+/* ── 表1専用スクロールバー ── */
+.table1-scroll::-webkit-scrollbar {
+  height: 20px !important;
+  width: 4px;
+}
+.table1-scroll::-webkit-scrollbar-track {
+  background: #fef3c7 !important;
+  border-radius: 10px;
+}
+.table1-scroll::-webkit-scrollbar-thumb {
+  background: #92400e !important;
+  border-radius: 10px;
+  border: 3px solid #fef3c7;
+}
+.table1-scroll::-webkit-scrollbar-thumb:hover {
+  background: #78350f !important;
+}
+.table1-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: #92400e #fef3c7;
 }
