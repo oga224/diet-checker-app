@@ -213,9 +213,11 @@ function PatientHealthTable({ clientId }) {
 
 // ── メインコンポーネント ──────────────────────────────────────
 const PERIODS = [
-  { key: 7,  label: '7日' },
-  { key: 14, label: '14日' },
-  { key: 30, label: '30日' },
+  { key: 7,   label: '7日' },
+  { key: 14,  label: '14日' },
+  { key: 30,  label: '30日' },
+  { key: 90,  label: '3ヶ月' },
+  { key: 365, label: '1年' },
 ]
 
 export default function ClientHistoryPage() {
@@ -231,10 +233,10 @@ export default function ClientHistoryPage() {
       const [cr, lr, mr] = await Promise.all([
         supabase.from('clients').select('name, goal_weight').eq('id', id).single(),
         supabase.from('weight_logs').select('*').eq('client_id', id)
-          .order('date', { ascending: false }).limit(60),
+          .order('date', { ascending: false }).limit(400),
         supabase.from('meal_logs')
           .select('date, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
-          .eq('client_id', id).order('date', { ascending: false }).limit(60),
+          .eq('client_id', id).order('date', { ascending: false }).limit(400),
       ])
       if (!cr.error) setClient(cr.data)
       if (!lr.error) setLogs(lr.data ?? [])
@@ -260,6 +262,14 @@ export default function ClientHistoryPage() {
     朝体重: l.morning_kg ?? undefined,
     夜体重: l.evening_kg ?? undefined,
   }))
+
+  // X軸ラベルの間引き（データ数に応じて調整）
+  const xInterval =
+    period <= 7  ? 0 :
+    period <= 14 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
+    period <= 30 ? Math.max(0, Math.ceil(chartData.length / 8) - 1) :
+    period <= 90 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
+                   Math.max(0, Math.ceil(chartData.length / 12) - 1)
 
   const latestKg = logs.find(l => l.morning_kg != null)?.morning_kg
   const firstKg  = [...logs].reverse().find(l => l.morning_kg != null)?.morning_kg
@@ -312,15 +322,26 @@ export default function ClientHistoryPage() {
           </div>
         )}
 
-        {/* 期間切り替え */}
-        <div className="flex gap-2">
-          {PERIODS.map(p => (
-            <button key={p.key} onClick={() => setPeriod(p.key)}
-              className={`flex-1 py-3 rounded-xl text-base font-bold transition-colors
-                ${period === p.key ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'}`}>
-              {p.label}
-            </button>
-          ))}
+        {/* 期間切り替え（2行：短期3つ ／ 長期2つ） */}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {PERIODS.slice(0, 3).map(p => (
+              <button key={p.key} onClick={() => setPeriod(p.key)}
+                className={`flex-1 py-3 rounded-xl text-base font-bold transition-colors
+                  ${period === p.key ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            {PERIODS.slice(3).map(p => (
+              <button key={p.key} onClick={() => setPeriod(p.key)}
+                className={`flex-1 py-3 rounded-xl text-base font-bold transition-colors
+                  ${period === p.key ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ⚖️ 体重グラフ（朝・夜のみ） */}
@@ -333,7 +354,7 @@ export default function ClientHistoryPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={xInterval} />
                   <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }}
                     tickFormatter={v => `${v}`} width={38} />
                   <Tooltip formatter={v => `${v} kg`} />
