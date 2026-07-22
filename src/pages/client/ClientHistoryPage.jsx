@@ -263,29 +263,29 @@ export default function ClientHistoryPage() {
     夜体重: l.evening_kg ?? undefined,
   }))
 
-  // X軸ラベルの間引き
+  // X軸ラベルの間引き（7日:毎日/14日:2日ごと/30日:4日ごと/3ヶ月:10日ごと/1年:30日ごと）
   const xInterval =
     period <= 7  ? 0 :
-    period <= 14 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
-    period <= 30 ? Math.max(0, Math.ceil(chartData.length / 8) - 1) :
-    period <= 90 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
-                   Math.max(0, Math.ceil(chartData.length / 12) - 1)
-
-  // ドット間隔（7日:毎日 / 14日:2日 / 30日:3日 / 3ヶ月:6日 / 1年:21日）
-  const dotStep =
-    period <= 7  ? 1 :
-    period <= 14 ? 2 :
+    period <= 14 ? 1 :
     period <= 30 ? 3 :
-    period <= 90 ? 6 : 21
+    period <= 90 ? 9 :
+                   29
 
+  // ドット表示（7-30日:全点 / 3ヶ月:最初・最後・7日ごと / 1年:最初と最後のみ）
   const n = chartData.length
-  const makeDot = (color) => ({ cx, cy, index }) => {
-    if (!cx || !cy) return null
-    if (index % dotStep !== 0 && index !== n - 1) return null
-    return <circle cx={cx} cy={cy} r={3} fill={color} />
+  function makeDot(color) {
+    if (period <= 30) return { r: 3 }
+    return ({ cx, cy, index }) => {
+      if (!cx || !cy) return null
+      const show = period <= 90
+        ? (index === 0 || index === n - 1 || index % 7 === 0)
+        : (index === 0 || index === n - 1)
+      if (!show) return null
+      return <circle cx={cx} cy={cy} r={3} fill={color} />
+    }
   }
-  const朝Dot = makeDot('#3b82f6')
-  const夜Dot = makeDot('#f97316')
+  const 朝Dot = makeDot('#3b82f6')
+  const 夜Dot = makeDot('#f97316')
 
   const latestKg = logs.find(l => l.morning_kg != null)?.morning_kg
   const firstKg  = [...logs].reverse().find(l => l.morning_kg != null)?.morning_kg
