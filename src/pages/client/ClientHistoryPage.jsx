@@ -263,13 +263,29 @@ export default function ClientHistoryPage() {
     夜体重: l.evening_kg ?? undefined,
   }))
 
-  // X軸ラベルの間引き（データ数に応じて調整）
+  // X軸ラベルの間引き
   const xInterval =
     period <= 7  ? 0 :
     period <= 14 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
     period <= 30 ? Math.max(0, Math.ceil(chartData.length / 8) - 1) :
     period <= 90 ? Math.max(0, Math.ceil(chartData.length / 7) - 1) :
                    Math.max(0, Math.ceil(chartData.length / 12) - 1)
+
+  // ドット間隔（7日:毎日 / 14日:2日 / 30日:3日 / 3ヶ月:6日 / 1年:21日）
+  const dotStep =
+    period <= 7  ? 1 :
+    period <= 14 ? 2 :
+    period <= 30 ? 3 :
+    period <= 90 ? 6 : 21
+
+  const n = chartData.length
+  const makeDot = (color) => ({ cx, cy, index }) => {
+    if (!cx || !cy) return null
+    if (index % dotStep !== 0 && index !== n - 1) return null
+    return <circle cx={cx} cy={cy} r={3} fill={color} />
+  }
+  const朝Dot = makeDot('#3b82f6')
+  const夜Dot = makeDot('#f97316')
 
   const latestKg = logs.find(l => l.morning_kg != null)?.morning_kg
   const firstKg  = [...logs].reverse().find(l => l.morning_kg != null)?.morning_kg
@@ -362,8 +378,8 @@ export default function ClientHistoryPage() {
                     <ReferenceLine y={client.goal_weight} stroke="#22c55e" strokeDasharray="4 3"
                       label={{ value: '目標', position: 'right', fontSize: 9, fill: '#22c55e' }} />
                   )}
-                  <Line type="monotone" dataKey="朝体重" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
-                  <Line type="monotone" dataKey="夜体重" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} connectNulls strokeDasharray="5 4" />
+                  <Line type="monotone" dataKey="朝体重" stroke="#3b82f6" strokeWidth={2.5} dot={朝Dot} activeDot={{ r: 4 }} connectNulls />
+                  <Line type="monotone" dataKey="夜体重" stroke="#f97316" strokeWidth={2} dot={夜Dot} activeDot={{ r: 4 }} connectNulls strokeDasharray="5 4" />
                 </LineChart>
               </ResponsiveContainer>
               <div className="flex gap-4 justify-center mt-2 text-xs text-gray-400">
