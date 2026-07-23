@@ -345,7 +345,7 @@ export default function ClientListPage() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-5">お客さん新規登録</h2>
-            <ClientForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} submitting={submitting} requireBirthdate />
+            <ClientForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} submitting={submitting} />
           </div>
         </div>
       )}

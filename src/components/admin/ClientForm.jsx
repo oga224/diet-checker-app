@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 const EMPTY_FORM = {
-  name: '', age: '', height_cm: '', goal_weight: '', memo: '', is_active: true, birthdate: '',
+  name: '', height_cm: '', goal_weight: '', memo: '', is_active: true, birthdate: '',
 }
 
 const inputCls =
@@ -18,30 +18,55 @@ function Field({ label, required, children }) {
   )
 }
 
-export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting, requireBirthdate = false }) {
+// 満年齢を計算（誕生日未到達の年は1引く）
+function calcAge(birthdateStr) {
+  if (!birthdateStr) return null
+  const birth = new Date(birthdateStr)
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  return age
+}
+
+export default function ClientForm({ initial = {}, onSubmit, onCancel, submitting }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...initial })
   const [err,  setErr]  = useState('')
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
+  const age = calcAge(form.birthdate)
+
   function handleSubmit(e) {
     e.preventDefault()
-    if (!form.name.trim())  { setErr('氏名は必須です'); return }
-    if (!form.age)          { setErr('年齢は必須です'); return }
-    if (!form.height_cm)    { setErr('身長は必須です'); return }
-    if (requireBirthdate && !form.birthdate) { setErr('生年月日は必須です（初期パスワードに使用します）'); return }
+    if (!form.name.trim())   { setErr('氏名は必須です'); return }
+    if (!form.birthdate)     { setErr('生年月日は必須です'); return }
+
+    // 未来日チェック
+    const today = new Date().toISOString().slice(0, 10)
+    if (form.birthdate > today) { setErr('生年月日に未来の日付は指定できません'); return }
+
+    // 存在しない日付チェック（例: 2月30日）
+    const d = new Date(form.birthdate)
+    const [y, m, day] = form.birthdate.split('-').map(Number)
+    if (d.getFullYear() !== y || d.getMonth() + 1 !== m || d.getDate() !== day) {
+      setErr('存在しない日付が入力されています'); return
+    }
+
     setErr('')
 
     onSubmit({
       name:        form.name.trim(),
-      age:         Number(form.age),
-      height_cm:   Number(form.height_cm),
+      age:         age ?? null,            // 互換性維持のため保存（表示はbirthdateから計算）
+      height_cm:   form.height_cm   ? Number(form.height_cm)   : null,
       goal_weight: form.goal_weight ? Number(form.goal_weight) : null,
       memo:        form.memo.trim() || null,
       is_active:   form.is_active,
-      birthdate:   form.birthdate || null,
+      birthdate:   form.birthdate,
     })
   }
+
+  const todayStr = new Date().toISOString().slice(0, 10)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -71,20 +96,34 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
         </div>
       </Field>
 
-      {/* 氏名・年齢 */}
+      {/* 氏名 */}
+      <Field label="氏名" required>
+        <input className={inputCls} value={form.name} onChange={set('name')} placeholder="山田 花子" />
+      </Field>
+
+      {/* 生年月日・年齢（自動計算） */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="氏名" required>
-          <input className={inputCls} value={form.name} onChange={set('name')} placeholder="山田 花子" />
+        <Field label="生年月日" required>
+          <input
+            className={inputCls}
+            type="date"
+            value={form.birthdate}
+            onChange={set('birthdate')}
+            max={todayStr}
+          />
+          <p className="text-xs text-gray-400 mt-1">患者ログインの初期パスワードに使用します（例：19800606）</p>
         </Field>
-        <Field label="年齢" required>
-          <input className={inputCls} type="number" min="0" max="120"
-            value={form.age} onChange={set('age')} placeholder="35" />
+        <Field label="年齢">
+          <div className={`${inputCls} bg-gray-50 text-gray-600 cursor-default select-none`}>
+            {age !== null ? `${age}歳` : ''}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">生年月日から自動計算</p>
         </Field>
       </div>
 
       {/* 身長・目標体重 */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="身長 (cm)" required>
+        <Field label="身長 (cm)">
           <input className={inputCls} type="number" step="0.1" min="0"
             value={form.height_cm} onChange={set('height_cm')} placeholder="160.0" />
         </Field>
@@ -93,15 +132,6 @@ export default function ClientForm({ initial = {}, onSubmit, onCancel, submittin
             value={form.goal_weight} onChange={set('goal_weight')} placeholder="55.0" />
         </Field>
       </div>
-
-      {/* 生年月日（初期パスワードに使用） */}
-      <Field label="生年月日" required={requireBirthdate}>
-        <input className={inputCls} type="date"
-          value={form.birthdate} onChange={set('birthdate')} max={new Date().toISOString().slice(0, 10)} />
-        {requireBirthdate && (
-          <p className="text-xs text-gray-400 mt-1">患者ログインの初期パスワードに使用します（例：19800606）</p>
-        )}
-      </Field>
 
       {/* 目的・悩み */}
       <Field label="目的・悩み">

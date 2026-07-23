@@ -266,10 +266,21 @@ export default function ClientDetailPage() {
     : diagnosisResult?.status === 'error'             ? 'error'
     : 'issued'
 
-  // 編集フォーム初期値（表示5項目に絞る）
+  // 満年齢を生年月日から計算
+  function calcAge(birthdateStr) {
+    if (!birthdateStr) return null
+    const birth = new Date(birthdateStr)
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+    return age
+  }
+  const displayAge = calcAge(client.birthdate)
+
+  // 編集フォーム初期値
   const editInitial = {
     name:        client.name        ?? '',
-    age:         client.age         != null ? String(client.age)        : '',
     height_cm:   client.height_cm   != null ? String(client.height_cm) : '',
     goal_weight: client.goal_weight != null ? String(client.goal_weight): '',
     memo:        client.memo        ?? '',
@@ -510,10 +521,10 @@ export default function ClientDetailPage() {
                   </>
               }
             </div>
-            {client.age != null && (
+            {displayAge !== null && (
               <div>
                 <p className="text-xs text-gray-400">年齢</p>
-                <p className="font-medium text-gray-800">{client.age} 歳</p>
+                <p className="font-medium text-gray-800">{displayAge} 歳</p>
               </div>
             )}
             {client.height_cm != null && (
