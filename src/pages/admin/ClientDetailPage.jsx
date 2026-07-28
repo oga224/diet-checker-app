@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import BackButton from '../../components/BackButton'
+import { SELECTED_STORE_STORAGE_KEY, STORE_QUERY_PARAM } from '../../lib/clientListNav'
+import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -31,6 +33,7 @@ const PERIODS = [
 export default function ClientDetailPage() {
   const { id }   = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [client,     setClient]     = useState(null)
   const [logs,       setLogs]       = useState([])
@@ -59,6 +62,15 @@ export default function ClientDetailPage() {
   const { signOut, profile }      = useAuth()
   const isSuperAdmin              = profile?.is_super_admin === true
   const [anonymousMode, setAnonymousMode] = useState(false)
+  const [nameHidden, setNameHidden] = useState(readNameHidden) // 氏名非表示モード（一覧と共通のsessionStorageで連動）
+
+  function toggleNameHidden() {
+    setNameHidden((prev) => {
+      const next = !prev
+      writeNameHidden(next)
+      return next
+    })
+  }
 
   // 他店舗スタッフが閲覧している場合（store_id が未設定なら制限なし）
   const isOtherStore = Boolean(
@@ -70,6 +82,12 @@ export default function ClientDetailPage() {
 
   // 表示制限：他店舗スタッフ OR super_admin の匿名モード
   const isRestricted = isOtherStore || (isSuperAdmin && anonymousMode)
+
+  // 個人情報（氏名・フリガナ・生年月日）を隠すべきかどうかの統一判定。
+  // 「氏名非表示モード」「他店舗閲覧」「本部の匿名モード」のいずれか1つでも該当すれば非表示。
+  // ラベルと値で別々の条件を使うと表示の不整合（値だけ実名が漏れる等）が起きるため、
+  // 表示箇所は必ずこの1つの値だけで判定する。
+  const shouldHidePersonalInfo = isRestricted || nameHidden
 
   async function fetchData() {
     const [clientRes, logsRes, mealRes] = await Promise.all([
@@ -107,6 +125,17 @@ export default function ClientDetailPage() {
   function showToast(type, msg) {
     setToast({ type, msg })
     setTimeout(() => setToast(null), 3500)
+  }
+
+  // 一覧から遷移してきた場合はブラウザ履歴を1つ戻る（スクロール位置も一覧側で復元される）。
+  // 直接URLを開いた場合など直前の一覧が無い場合は、保存されている選択店舗の一覧へ遷移する。
+  function handleBack() {
+    if (location.state?.fromList) {
+      navigate(-1)
+      return
+    }
+    const savedStore = sessionStorage.getItem(SELECTED_STORE_STORAGE_KEY)
+    navigate(savedStore ? `/admin/clients?${STORE_QUERY_PARAM}=${savedStore}` : '/admin/clients')
   }
 
   async function handleUpdate(payload) {
@@ -246,8 +275,15 @@ export default function ClientDetailPage() {
   const todayMeal    = mealLogMap[todayStr] ?? null
   const yesterdayLog  = logs.find((l) => l.date === yesterdayStr) ?? null
   const yesterdayMeal = mealLogMap[yesterdayStr] ?? null
-  const latestLog  = logs.at(-1) ?? null
-  const currentKg  = latestLog?.morning_kg ?? null
+
+  // 開始体重／最新体重：お客さん一覧（ClientListPage）と同じアルゴリズムで算出
+  // （logs は日付昇順のため、morning_kg が入っている最初/最後の値をそれぞれ採用）
+  let firstKg = null, currentKg = null
+  logs.forEach((l) => {
+    if (l.morning_kg != null && firstKg == null) firstKg = l.morning_kg
+    if (l.morning_kg != null) currentKg = l.morning_kg
+  })
+  const weightDiff = firstKg != null && currentKg != null ? +(currentKg - firstKg).toFixed(1) : null
 
   // チャート用：期間フィルタ
   const periodDays = PERIODS.find((p) => p.key === chartPeriod)?.days ?? 30
@@ -390,9 +426,15 @@ export default function ClientDetailPage() {
       {showDelete && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-2">本当に削除しますか？</h2>
+            <h2 className="text-lg font-bold text-gray-800 mb-2">
+              {shouldHidePersonalInfo ? `${clientCode}を削除しますか？` : '本当に削除しますか？'}
+            </h2>
             <p className="text-sm text-gray-500 mb-6">
-              <span className="font-medium text-gray-700">{client.name}</span> さんの全データが削除されます。取り消せません。
+              {shouldHidePersonalInfo ? (
+                <><span className="font-medium text-gray-700">{clientCode}</span> の全データが削除されます。取り消せません。</>
+              ) : (
+                <><span className="font-medium text-gray-700">{client.name}</span> さんの全データが削除されます。取り消せません。</>
+              )}
             </p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowDelete(false)}
@@ -411,29 +453,37 @@ export default function ClientDetailPage() {
       {/* ── ヘッダー ── */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <BackButton to="/admin/clients" label="一覧へ" variant="dark" />
+          <BackButton onClick={handleBack} label="一覧へ" variant="dark" />
           <div>
-            {isRestricted ? (
+            {shouldHidePersonalInfo ? (
               <>
-                <p className="text-xs text-orange-600 font-medium">
-                  {isOtherStore ? '他店舗顧客' : '匿名モード（本部）'}
+                <p className={`text-xs font-medium ${isRestricted ? 'text-orange-600' : 'text-gray-400'}`}>
+                  {isOtherStore ? '他店舗顧客' : isRestricted ? '匿名モード（本部）' : '氏名非表示モード中'}
                 </p>
-                <h1 className="text-lg font-bold text-gray-800">顧客番号：{clientCode}</h1>
+                <h1 className="text-[21px] font-bold text-gray-800">顧客番号：{clientCode}</h1>
               </>
             ) : (
               <>
-                <h1 className="text-lg font-bold text-gray-800">
+                <h1 className="text-[21px] font-bold text-gray-800">
                   {client.name}
                   {clientCode && (
-                    <span className="ml-2 text-xs font-normal text-gray-400">{clientCode}</span>
+                    <span className="ml-2 text-[15px] font-normal text-gray-400">{clientCode}</span>
                   )}
                 </h1>
-                {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
+                {client.kana && <p className="text-[15px] text-gray-400">{client.kana}</p>}
               </>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* 氏名の表示・非表示切替（一覧画面と共通のsessionStorageで連動） */}
+          <button onClick={toggleNameHidden}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors inline-flex items-center gap-1.5
+              ${nameHidden
+                ? 'bg-slate-700 text-white border-slate-700 hover:bg-slate-800'
+                : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}>
+            {nameHidden ? '👁️ 氏名を表示' : '🙈 氏名を非表示'}
+          </button>
           {/* 自店舗のみ記録追加・編集を許可 */}
           {!isRestricted && (
             <>
@@ -492,6 +542,12 @@ export default function ClientDetailPage() {
         </div>
       </header>
 
+      {nameHidden && !isRestricted && (
+        <div className="bg-slate-700 text-white text-xs font-medium text-center py-1.5 px-4">
+          🙈 氏名非表示モード中
+        </div>
+      )}
+
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
 
         {/* ══════════════════════════════════════════════
@@ -499,7 +555,7 @@ export default function ClientDetailPage() {
         ══════════════════════════════════════════════ */}
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
           <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">基本情報</h2>
+            <h2 className="text-[17px] font-semibold text-gray-400 uppercase tracking-wide">基本情報</h2>
             {client.is_active !== false
               ? <span className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full flex items-center gap-1">
                   <span>●</span> プログラム中
@@ -512,53 +568,69 @@ export default function ClientDetailPage() {
           {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <p className="text-xs text-gray-400">{isRestricted ? '顧客番号' : '氏名'}</p>
-              {isOtherStore
-                ? <p className="font-bold text-gray-800 text-lg">{clientCode}</p>
+              <p className="text-[15px] text-gray-400">{shouldHidePersonalInfo ? '顧客番号' : '氏名'}</p>
+              {shouldHidePersonalInfo
+                ? <p className="text-[19px] font-semibold text-gray-900">{clientCode}</p>
                 : <>
-                    <p className="font-semibold text-gray-900">{client.name}</p>
-                    {client.kana && <p className="text-xs text-gray-400">{client.kana}</p>}
+                    <p className="text-[19px] font-semibold text-gray-900">{client.name}</p>
+                    {client.kana && <p className="text-[15px] text-gray-400">{client.kana}</p>}
                   </>
               }
             </div>
             {displayAge !== null && (
               <div>
-                <p className="text-xs text-gray-400">年齢</p>
-                <p className="font-medium text-gray-800">{displayAge} 歳</p>
+                <p className="text-[15px] text-gray-400">年齢</p>
+                <p className="text-[19px] font-medium text-gray-800">{displayAge} 歳</p>
               </div>
             )}
             {client.height_cm != null && (
               <div>
-                <p className="text-xs text-gray-400">身長</p>
-                <p className="font-medium text-gray-800">{client.height_cm} cm</p>
+                <p className="text-[15px] text-gray-400">身長</p>
+                <p className="text-[19px] font-medium text-gray-800">{client.height_cm} cm</p>
               </div>
             )}
             {client.goal_weight != null && (
               <div>
-                <p className="text-xs text-gray-400">目標体重</p>
-                <p className="font-medium text-gray-800">{client.goal_weight} kg</p>
+                <p className="text-[15px] text-gray-400">目標体重</p>
+                <p className="text-[19px] font-medium text-gray-800">{client.goal_weight} kg</p>
               </div>
             )}
-            {/* 生年月日：自店舗 or super_admin実名のみ表示 */}
-            {!isRestricted && client.birthdate && (
+            {/* 生年月日：氏名非表示モード／他店舗閲覧／本部匿名モードのいずれでも値を「非表示」に統一 */}
+            {client.birthdate && (
               <div>
-                <p className="text-xs text-gray-400">生年月日</p>
-                <p className="font-medium text-gray-800">{client.birthdate}</p>
+                <p className="text-[15px] text-gray-400">生年月日</p>
+                <p className="text-[19px] font-medium text-gray-800">{shouldHidePersonalInfo ? '非表示' : client.birthdate}</p>
               </div>
             )}
           </div>
-          {/* 現在体重（最新記録から） */}
-          {currentKg != null && (
-            <div className="mb-3">
-              <p className="text-xs text-gray-400 mb-0.5">現在体重（最新）</p>
-              <p className="font-bold text-blue-600 text-lg">{currentKg} kg</p>
+          {/* 開始体重・現在体重（最新）・体重差：お客さん一覧と同じ算出方法（一致する） */}
+          {(firstKg != null || currentKg != null) && (
+            <div className="grid grid-cols-3 gap-4 mb-4 max-w-md">
+              <div>
+                <p className="text-[15px] text-gray-400 mb-0.5">開始体重</p>
+                <p className="text-[21px] font-bold text-gray-900">{firstKg != null ? `${firstKg}kg` : '未記録'}</p>
+              </div>
+              <div>
+                <p className="text-[15px] text-gray-400 mb-0.5">現在体重（最新）</p>
+                <p className="text-[21px] font-bold text-blue-600">{currentKg != null ? `${currentKg}kg` : '未記録'}</p>
+              </div>
+              <div>
+                <p className="text-[15px] text-gray-400 mb-0.5">体重差</p>
+                {weightDiff != null ? (
+                  <p className={`text-[21px] font-bold ${weightDiff < 0 ? 'text-red-500' : weightDiff > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                    {weightDiff >= 0 ? '+' : ''}{weightDiff}kg
+                  </p>
+                ) : (
+                  <p className="text-[21px] font-bold text-gray-300">計算不可</p>
+                )}
+              </div>
             </div>
           )}
           {/* 目的・悩み（他店舗の場合は非表示） */}
           {!isRestricted && client.memo && (
             <div className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-xl">
-              <p className="text-xs font-bold text-blue-600 mb-1.5">目的・悩み</p>
-              <p className="text-base font-bold text-gray-900 leading-relaxed">{client.memo}</p>
+              <p className="text-[15px] font-bold text-blue-600 mb-1.5">目的・悩み</p>
+              <p className="text-[19px] font-bold text-gray-900 leading-relaxed">{client.memo}</p>
             </div>
           )}
         </section>
@@ -570,7 +642,7 @@ export default function ClientDetailPage() {
           <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
             {/* ヘッダー＋状態バッジ */}
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">患者ログイン情報</h2>
+              <h2 className="text-[17px] font-semibold text-gray-400 uppercase tracking-wide">患者ログイン情報</h2>
               <div>
                 {loginStatus === 'unissued'  && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">未発行</span>}
                 {loginStatus === 'issued'    && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200">発行済み</span>}
@@ -585,12 +657,12 @@ export default function ClientDetailPage() {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-gray-400">ログインID</p>
-                    <p className="text-lg font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
+                    <p className="text-[15px] text-gray-400">ログインID</p>
+                    <p className="text-[21px] font-black text-gray-800">{client.customer_number ?? '未発行'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">ログインURL</p>
-                    <p className="text-xs font-medium text-gray-700 break-all">{LOGIN_URL}</p>
+                    <p className="text-[15px] text-gray-400">ログインURL</p>
+                    <p className="text-[14px] font-medium text-gray-700 break-all">{LOGIN_URL}</p>
                   </div>
                 </div>
 
@@ -598,7 +670,9 @@ export default function ClientDetailPage() {
                   <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
                     <p className="text-xs text-purple-600 font-bold">初期パスワード（誕生日8桁）</p>
                     <p className="text-xl font-black text-gray-800">
-                      {client.birthdate ? birthdateToPassword(client.birthdate) : '生年月日未登録'}
+                      {shouldHidePersonalInfo
+                        ? '非表示（氏名非表示モード中）'
+                        : client.birthdate ? birthdateToPassword(client.birthdate) : '生年月日未登録'}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
                       ※患者がパスワードを変更している場合、現在のパスワードとは異なります
@@ -694,7 +768,7 @@ export default function ClientDetailPage() {
             2. 昨日の健康スコア
         ══════════════════════════════════════════════ */}
         <section>
-          <p className="text-xs text-gray-400 font-medium mb-2 px-1">
+          <p className="text-[17px] text-gray-900 font-medium mb-2 px-1">
             昨日の健康スコア（{yesterdayStr}）
           </p>
           {yesterdayLog ? (
@@ -712,7 +786,7 @@ export default function ClientDetailPage() {
         <section className="bg-white rounded-xl border border-gray-200 px-6 py-5">
           {/* ヘッダー：タイトル＋期間ボタン */}
           <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold text-gray-500">体重グラフ</h2>
+            <h2 className="text-[17px] font-semibold text-gray-500">体重グラフ</h2>
             <div className="flex gap-1">
               {PERIODS.map((p) => (
                 <button key={p.key} onClick={() => setChartPeriod(p.key)}
@@ -729,12 +803,12 @@ export default function ClientDetailPage() {
           {/* 凡例（上部中央） */}
           {chartData.length > 0 && (
             <div className="flex justify-center gap-6 mb-2">
-              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: '#f97316' }}>
+              <span className="flex items-center gap-1.5 text-[15px] font-medium" style={{ color: '#f97316' }}>
                 <span className="inline-block w-6 h-0.5 rounded-full" style={{ background: '#f97316' }} />
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#f97316' }} />
                 朝の体重
               </span>
-              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: '#38bdf8' }}>
+              <span className="flex items-center gap-1.5 text-[15px] font-medium" style={{ color: '#38bdf8' }}>
                 <span className="inline-block w-6 h-0.5 rounded-full" style={{ background: '#38bdf8' }} />
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#38bdf8' }} />
                 夜の体重
@@ -751,7 +825,7 @@ export default function ClientDetailPage() {
                 <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 14, fill: '#6b7280' }}
                   interval={
                     chartData.length > 90 ? Math.ceil(chartData.length / 18) :
                     chartData.length > 30 ? Math.ceil(chartData.length / 12) :
@@ -764,9 +838,9 @@ export default function ClientDetailPage() {
                     const pad = 0.5
                     return [Math.floor((min - pad) * 10) / 10, Math.ceil((max + pad) * 10) / 10]
                   }}
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 14, fill: '#6b7280' }}
                   tickFormatter={(v) => `${v}kg`}
-                  width={52}
+                  width={60}
                   tickLine={false}
                   axisLine={false}
                 />
@@ -777,7 +851,7 @@ export default function ClientDetailPage() {
                     const asa  = payload.find(p => p.dataKey === '朝')
                     const yoru = payload.find(p => p.dataKey === '夜')
                     return (
-                      <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-sm min-w-[140px]">
+                      <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-[17px] min-w-[140px]">
                         <p className="font-semibold text-gray-700 mb-1.5">日付：{label}</p>
                         {asa  && <p style={{ color: '#f97316' }} className="font-medium">朝の体重：{asa.value} kg</p>}
                         {yoru && <p style={{ color: '#38bdf8' }} className="font-medium">夜の体重：{yoru.value} kg</p>}

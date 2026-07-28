@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import BackButton from '../../components/BackButton'
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { supabase }  from '../../lib/supabase'
 import ClientForm    from '../../components/admin/ClientForm'
 import { useAuth }   from '../../contexts/AuthContext'
-import { evaluateLog, scoreColor, scoreLabel } from '../../lib/evaluateLog'
+import { evaluateLog, scoreColor, scoreLabel, pendingColor } from '../../lib/evaluateLog'
+import {
+  STORE_QUERY_PARAM, STORE_ALL_VALUE, SELECTED_STORE_STORAGE_KEY,
+  RETURN_FLAG_STORAGE_KEY, scrollPosKey,
+} from '../../lib/clientListNav'
+import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
 
 const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -37,7 +42,7 @@ function EntryBadge({ clientId, todayLogs, weightHistory }) {
   return (
     <span className={`text-xs font-medium border px-2 py-0.5 rounded-full whitespace-nowrap
       ${days >= 3 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-orange-50 text-orange-500 border-orange-200'}`}>
-      {days}日未入力
+      <span className="text-[14px]">{days}</span>日未入力
     </span>
   )
 }
@@ -66,6 +71,16 @@ export default function ClientListPage() {
   const [stores,        setStores]        = useState([])             // 全店舗リスト
   const [selectedStoreId, setSelectedStoreId] = useState(null)      // null=全店舗
   const [storeFilterReady, setStoreFilterReady] = useState(false)   // 初期化完了フラグ
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [nameHidden, setNameHidden] = useState(readNameHidden)     // 氏名非表示モード（タブ内で維持）
+
+  function toggleNameHidden() {
+    setNameHidden((prev) => {
+      const next = !prev
+      writeNameHidden(next)
+      return next
+    })
+  }
 
   async function fetchAll() {
     try {
@@ -141,13 +156,61 @@ export default function ClientListPage() {
   const { signOut, profile } = useAuth()
   const isSuperAdmin = profile?.is_super_admin === true
 
-  // プロフィール読み込み後に自店舗をデフォルトフィルタとして設定（一度だけ）
+  // プロフィール読み込み後、URLのstoreパラメータを優先して店舗フィルタを初期化（一度だけ）。
+  // URLに無ければ自店舗をデフォルトにして、履歴を汚さないようreplaceでURLへ反映する。
   useEffect(() => {
     if (!storeFilterReady && profile !== null) {
-      setSelectedStoreId(profile?.store_id || null)
+      const urlStore = searchParams.get(STORE_QUERY_PARAM)
+      const initialStoreId = urlStore
+        ? (urlStore === STORE_ALL_VALUE ? null : urlStore)
+        : (profile?.store_id || null)
+      setSelectedStoreId(initialStoreId)
       setStoreFilterReady(true)
+      if (!urlStore) {
+        const next = new URLSearchParams(searchParams)
+        next.set(STORE_QUERY_PARAM, initialStoreId || STORE_ALL_VALUE)
+        setSearchParams(next, { replace: true })
+      }
     }
   }, [profile, storeFilterReady])
+
+  // 店舗選択：state・URL・sessionStorage をまとめて更新
+  function selectStore(storeId) {
+    setSelectedStoreId(storeId)
+    const next = new URLSearchParams(searchParams)
+    next.set(STORE_QUERY_PARAM, storeId || STORE_ALL_VALUE)
+    setSearchParams(next, { replace: true })
+  }
+
+  // 選択中の店舗をセッションに保存（顧客詳細から「戻る」際、履歴が無い場合のフォールバック用）
+  useEffect(() => {
+    if (storeFilterReady) {
+      sessionStorage.setItem(SELECTED_STORE_STORAGE_KEY, selectedStoreId || STORE_ALL_VALUE)
+    }
+  }, [selectedStoreId, storeFilterReady])
+
+  // 顧客詳細から戻ってきた場合のみ、保存していたスクロール位置を復元する
+  // （店舗選択の復元 → 一覧データ取得完了 → 描画完了 の後に実行する）
+  useEffect(() => {
+    if (loading || !storeFilterReady) return
+    const storeKey = selectedStoreId || STORE_ALL_VALUE
+    const returnedFrom = sessionStorage.getItem(RETURN_FLAG_STORAGE_KEY)
+    if (returnedFrom === storeKey) {
+      sessionStorage.removeItem(RETURN_FLAG_STORAGE_KEY)
+      const saved = sessionStorage.getItem(scrollPosKey(selectedStoreId))
+      if (saved !== null) {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, parseInt(saved, 10))
+        })
+      }
+    }
+  }, [loading, storeFilterReady, selectedStoreId])
+
+  // 顧客行クリック時：詳細から戻ってきたときに復元できるようスクロール位置を保存
+  function handleRowClick() {
+    sessionStorage.setItem(scrollPosKey(selectedStoreId), String(window.scrollY))
+    sessionStorage.setItem(RETURN_FLAG_STORAGE_KEY, selectedStoreId || STORE_ALL_VALUE)
+  }
 
   // 他店舗かどうかを判定（store_id 未設定なら制限なし）
   const isFromOtherStore = (c) => {
@@ -326,6 +389,14 @@ export default function ClientListPage() {
           <p className="text-sm text-gray-500 mt-0.5">整骨院体重管理システム</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* 氏名の表示・非表示切替（来院中の顧客に他の方のデータを見せる際の目隠し用） */}
+          <button onClick={toggleNameHidden}
+            className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors inline-flex items-center gap-1.5
+              ${nameHidden
+                ? 'bg-slate-700 text-white border-slate-700 hover:bg-slate-800'
+                : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}>
+            {nameHidden ? '👁️ 氏名を表示' : '🙈 氏名を非表示'}
+          </button>
           {/* 自店舗表示中のみ新規登録ボタンを表示 */}
           {canRegister && (
             <button onClick={() => setShowForm(true)}
@@ -341,6 +412,12 @@ export default function ClientListPage() {
         </div>
       </header>
 
+      {nameHidden && (
+        <div className="bg-slate-700 text-white text-xs font-medium text-center py-1.5 px-4">
+          🙈 氏名非表示モード中
+        </div>
+      )}
+
       {showForm && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
@@ -350,7 +427,7 @@ export default function ClientListPage() {
         </div>
       )}
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <main className="max-w-5xl mx-auto px-4 py-6">
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
             <strong>エラー：</strong> {error}
@@ -383,7 +460,7 @@ export default function ClientListPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-gray-400 w-20 flex-shrink-0">自店舗</span>
                       <button
-                        onClick={() => setSelectedStoreId(ownStore.id)}
+                        onClick={() => selectStore(ownStore.id)}
                         className={btnCls(selectedStoreId === ownStore.id)}
                       >
                         {ownStore.name}
@@ -397,7 +474,7 @@ export default function ClientListPage() {
                       <div className="flex gap-2 flex-wrap">
                         {otherStores.map(s => (
                           <button key={s.id}
-                            onClick={() => setSelectedStoreId(s.id)}
+                            onClick={() => selectStore(s.id)}
                             className={btnCls(selectedStoreId === s.id)}
                           >
                             {s.name}
@@ -410,7 +487,7 @@ export default function ClientListPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-400 w-20 flex-shrink-0">全体</span>
                     <button
-                      onClick={() => setSelectedStoreId(null)}
+                      onClick={() => selectStore(null)}
                       className={btnCls(selectedStoreId === null)}
                     >
                       全店舗
@@ -434,8 +511,18 @@ export default function ClientListPage() {
               )}
             </div>
 
-            <div className="grid gap-3">
-              {sorted.map((c) => {
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              {/* ── 見出し行（PCのみ） ── */}
+              <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] gap-x-4 px-5 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
+                <span>顧客</span>
+                <span className="text-right">開始体重</span>
+                <span className="text-right">最新体重</span>
+                <span className="text-right">体重差</span>
+                <span className="text-right">入力状況・注意</span>
+                <span />
+              </div>
+
+              {sorted.map((c, idx) => {
                 const wLog       = todayLogs[c.id]     ?? null
                 const mLog       = todayMeals[c.id]    ?? null
                 const hist       = weightHistory[c.id] ?? null
@@ -445,91 +532,147 @@ export default function ClientListPage() {
                 const cnum = c.customer_number || ''
                 // 他店舗: 顧客番号 + 店舗名。自店舗: 顧客番号 + 氏名
                 const clientStore = stores.find(s => s.id === c.store_id)
-                const displayName  = otherStore
-                  ? (cnum || `ID-${c.id.slice(0, 6)}`)
-                  : (cnum ? `${cnum} ${c.name}` : c.name)
-                const displaySub   = otherStore
+                // 顧客番号（小さく表示）と氏名（大きく表示）を分離。
+                // 他店舗閲覧時は氏名を一切表示せず、番号（無ければ仮ID）のみに留める＝匿名化を維持（既存仕様）。
+                // 氏名非表示モード（自店舗の閲覧のみが対象）は、その上にさらに重ねる表示切替。
+                const numberLabel = cnum || null
+                const nameLabel   = otherStore
+                  ? (cnum ? null : `ID-${c.id.slice(0, 6)}`)
+                  : nameHidden ? '氏名非表示' : c.name
+                const displaySub  = otherStore
                   ? (clientStore ? clientStore.name : '他店舗')
-                  : c.kana
-                const avatarLetter = otherStore ? (cnum.slice(0, 1) || '#') : (c.name?.charAt(0) || '?')
+                  : nameHidden ? null : c.kana
 
-                // 最新スコア：今日のログがあればそれを使用、なければ最新ログ
-                const scoreLog  = wLog ?? hist?.latestLog ?? null
-                const scoreMeal = wLog ? mLog : null
-                const scoreVal  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal).score : null
-                const scoreClr  = scoreVal !== null ? scoreColor(scoreVal) : null
+                // 最新スコア：今日のログがあればそれを使用、なければ最新ログ（今日のログが無い場合は対象日を表示）
+                const scoreLog   = wLog ?? hist?.latestLog ?? null
+                const scoreMeal  = wLog ? mLog : null
+                const scoreEval  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal) : null
+                const scoreVal   = scoreEval ? scoreEval.score : null
+                const scoreClr   = scoreEval ? (scoreEval.isToday ? pendingColor() : scoreColor(scoreVal)) : null
+                const scoreLbl   = scoreEval ? (scoreEval.isToday ? '入力途中' : scoreLabel(scoreVal)) : null
+                const scoreDateLabel = scoreEval && !scoreEval.isToday && scoreLog?.date
+                  ? `${format(parseISO(scoreLog.date), 'M月d日')}の評価`
+                  : null
 
                 // 進捗
                 const firstKg   = hist?.firstKg  ?? null
                 const latestKg  = wLog?.morning_kg ?? hist?.latestKg ?? null
                 const totalDiff = firstKg && latestKg ? +(latestKg - firstKg).toFixed(1) : null
                 const toGoal    = c.goal_weight && latestKg ? +(latestKg - c.goal_weight).toFixed(1) : null
+                const toGoalNode = toGoal !== null && (
+                  toGoal <= 0
+                    ? <span className="text-green-600 font-medium">達成！</span>
+                    : <>-{toGoal}kg</>
+                )
+
+                const statusBadges = (
+                  <>
+                    <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
+                    {scoreVal !== null && (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
+                        <span className="text-[14px]">{scoreVal}</span>点 {scoreLbl}
+                      </span>
+                    )}
+                    {scoreDateLabel && (
+                      <span className="text-[10px] text-gray-400 whitespace-nowrap">{scoreDateLabel}</span>
+                    )}
+                  </>
+                )
+                const subBadges = (
+                  <>
+                    {isInactive && (
+                      <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        終了
+                      </span>
+                    )}
+                    {!otherStore && commCnt > 0 && (
+                      <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full whitespace-nowrap">
+                        コメント <span className="text-[14px]">{commCnt}</span>件
+                      </span>
+                    )}
+                  </>
+                )
 
                 return (
                   <Link
                     key={c.id}
                     to={`/admin/clients/${c.id}`}
-                    className={`bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-blue-300 hover:shadow-sm transition-all ${isInactive ? 'opacity-70' : ''}`}
+                    state={{ fromList: true }}
+                    onClick={handleRowClick}
+                    className={`group block border-b border-gray-100 last:border-b-0 transition-colors hover:bg-blue-50/70 ${idx % 2 === 1 ? 'bg-gray-50/60' : 'bg-white'} ${isInactive ? 'opacity-60' : ''}`}
                   >
-                    {/* 上段：名前 + バッジ群 */}
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${otherStore ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-700'}`}>
-                          {avatarLetter}
+                    {/* ── スマートフォン表示（2〜3段） ── */}
+                    <div className="md:hidden px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                          {numberLabel && <span className="text-sm font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
+                          {nameLabel && (
+                            <span className="text-[19px] font-normal text-gray-900 truncate flex items-center gap-1">
+                              {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
+                              <span className="truncate">{nameLabel}</span>
+                            </span>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <p className={`font-semibold flex items-center gap-1.5 text-sm ${isInactive ? 'text-gray-500' : 'text-gray-800'}`}>
-                            {!otherStore && !isInactive && <span className="text-red-500 text-xs">●</span>}
-                            {displayName}
-                          </p>
-                          {displaySub && <p className={`text-xs ${otherStore ? 'text-orange-400' : 'text-gray-400'}`}>{displaySub}</p>}
-                        </div>
+                        <span className="text-gray-300 text-lg flex-shrink-0">›</span>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* 終了バッジ */}
-                        {isInactive && (
-                          <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full">
-                            終了
-                          </span>
-                        )}
-                        {/* コメントバッジ（他店舗は非表示） */}
-                        {!otherStore && commCnt > 0 && (
-                          <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
-                            コメント {commCnt}件
-                          </span>
-                        )}
-                        {/* 入力状況バッジ */}
-                        <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
-                        {/* スコアバッジ */}
-                        {scoreVal !== null && (
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
-                            {scoreVal}点 {scoreLabel(scoreVal)}
-                          </span>
-                        )}
-                        <span className="text-gray-300 text-base">›</span>
+                      {displaySub && <p className="text-xs text-gray-400 mt-0.5 truncate">{displaySub}</p>}
+                      {(firstKg != null || latestKg != null || totalDiff !== null) && (
+                        <div className="flex items-center gap-3 text-sm text-gray-700 mt-1.5 flex-wrap">
+                          {firstKg  != null && <span>開始 <span className="text-[18px] font-semibold text-gray-900">{firstKg}kg</span></span>}
+                          {latestKg != null && <span>最新 <span className="text-[18px] font-semibold text-gray-900">{latestKg}kg</span></span>}
+                          {totalDiff !== null && (
+                            <span>
+                              差{' '}
+                              <span className={`text-[18px] font-normal ${totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                                {totalDiff >= 0 ? '+' : ''}{totalDiff}kg
+                              </span>
+                            </span>
+                          )}
+                          {toGoalNode && <span className="text-xs text-gray-400">目標まで {toGoalNode}</span>}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {statusBadges}
+                        {subBadges}
                       </div>
                     </div>
 
-                    {/* 下段：進捗サマリー */}
-                    {(firstKg || latestKg || c.goal_weight) && (
-                      <div className="flex items-center gap-3 text-xs text-gray-500 ml-11 flex-wrap">
-                        {firstKg   && <span>開始 <span className="font-medium text-gray-700">{firstKg}kg</span></span>}
-                        {latestKg  && <span>最新 <span className="font-medium text-gray-700">{latestKg}kg</span></span>}
-                        {totalDiff !== null && (
-                          <span className={`font-bold ${totalDiff < 0 ? 'text-green-600' : totalDiff > 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                            {totalDiff >= 0 ? '+' : ''}{totalDiff}kg
-                          </span>
-                        )}
-                        {toGoal !== null && (
-                          <span>
-                            目標まで{' '}
-                            <span className={`font-medium ${toGoal <= 0 ? 'text-green-600' : 'text-gray-700'}`}>
-                              {toGoal <= 0 ? '達成！' : `-${toGoal}kg`}
-                            </span>
-                          </span>
+                    {/* ── PC表示（表形式） ── */}
+                    <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] items-center gap-x-4 px-5 min-h-[78px]">
+                      <div className="min-w-0 flex items-baseline gap-2.5">
+                        {numberLabel && <span className="text-[15px] font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
+                        <div className="min-w-0">
+                          {nameLabel && (
+                            <p className="text-[20px] font-normal text-gray-900 truncate flex items-center gap-1.5">
+                              {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
+                              {nameLabel}
+                            </p>
+                          )}
+                          {displaySub && <p className="text-xs text-gray-400 truncate">{displaySub}</p>}
+                        </div>
+                      </div>
+                      <div className="text-right text-[20px] font-medium text-gray-900">
+                        {firstKg != null ? `${firstKg}kg` : <span className="text-gray-300 font-normal">—</span>}
+                      </div>
+                      <div className="text-right text-[20px] font-medium text-gray-900">
+                        {latestKg != null ? `${latestKg}kg` : <span className="text-gray-300 font-normal">—</span>}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[20px] font-normal">
+                          {totalDiff !== null
+                            ? <span className={totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}>{totalDiff >= 0 ? '+' : ''}{totalDiff}kg</span>
+                            : <span className="text-gray-300 font-normal">—</span>}
+                        </p>
+                        {toGoalNode && <p className="text-[11px] text-gray-400 mt-0.5 whitespace-nowrap">目標まで {toGoalNode}</p>}
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end">{statusBadges}</div>
+                        {(isInactive || (!otherStore && commCnt > 0)) && (
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">{subBadges}</div>
                         )}
                       </div>
-                    )}
+                      <div className="text-right text-gray-300 text-lg group-hover:text-blue-400 transition-colors">›</div>
+                    </div>
                   </Link>
                 )
               })}

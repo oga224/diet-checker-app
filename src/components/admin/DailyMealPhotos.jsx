@@ -118,9 +118,9 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
       {/* ヘッダー */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">食事写真</h2>
+          <h2 className="text-[17px] font-semibold text-gray-500 uppercase tracking-wide mb-1">食事写真</h2>
           {dateLabel && (
-            <p className="text-base font-bold text-blue-700">📅 {dateLabel}</p>
+            <p className="text-[19px] font-bold text-blue-700">📅 {dateLabel}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -186,7 +186,7 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
               const url = mealLog?.[urlKey] ?? null
               return (
                 <div key={urlKey} className="flex flex-col gap-1.5">
-                  <p className="text-xs font-medium text-gray-500 text-center">{label}</p>
+                  <p className="text-[15px] font-medium text-gray-500 text-center">{label}</p>
                   {url ? (
                     <button
                       type="button"
@@ -209,8 +209,8 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
           {/* コメント */}
           {weightLog?.comment ? (
             <div className="bg-gray-50 rounded-xl px-4 py-3">
-              <p className="text-xs text-gray-400 mb-1 font-medium">💬 コメント</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{weightLog.comment}</p>
+              <p className="text-[14px] text-gray-400 mb-1 font-medium">💬 コメント</p>
+              <p className="text-[17px] text-gray-700 leading-relaxed">{weightLog.comment}</p>
             </div>
           ) : !hasAnyPhoto ? (
             <p className="text-center text-sm text-gray-400 py-4">

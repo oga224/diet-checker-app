@@ -39,7 +39,7 @@ const ROWS_HEALTH = [
   {
     key: 'morning_kg', label: '朝体重',
     cell: (w) => w?.morning_kg != null
-      ? { v: `${w.morning_kg}`, c: 'text-gray-800 text-base' }
+      ? { v: `${w.morning_kg}`, c: 'text-gray-800 text-[19px]' }
       : { v: '', c: '' },
   },
   {
@@ -48,7 +48,7 @@ const ROWS_HEALTH = [
       if (w?.evening_kg == null) return { v: '', c: '' }
       const diff = w.morning_kg != null ? +(w.evening_kg - w.morning_kg).toFixed(1) : null
       const isOver = diff !== null && diff >= 0.6
-      return { v: `${w.evening_kg}`, c: isOver ? 'text-red-500 text-base' : 'text-gray-800 text-base' }
+      return { v: `${w.evening_kg}`, c: isOver ? 'text-red-500 text-[19px]' : 'text-gray-800 text-[19px]' }
     },
   },
   {
@@ -95,21 +95,21 @@ const ROWS_HEALTH = [
       // 100000以上は誤って1000倍された値と判断して補正（例: 1300000 → 1300ml）
       const ml = w.water_ml >= 100000 ? Math.round(w.water_ml / 1000) : w.water_ml
       const num = (ml / 1000).toFixed(1)
-      return { v: numUnit(num, 'L'), c: ml >= 1500 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      return { v: numUnit(num, 'L'), c: ml >= 1500 ? 'text-gray-800 text-[19px]' : 'text-red-500 text-[19px]' }
     },
   },
   {
     key: 'toilet', label: 'トイレ',
     cell: (w) => {
       if (w?.toilet_count == null) return { v: '', c: '' }
-      return { v: numUnit(w.toilet_count, '回'), c: w.toilet_count >= 10 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      return { v: numUnit(w.toilet_count, '回'), c: w.toilet_count >= 10 ? 'text-gray-800 text-[19px]' : 'text-red-500 text-[19px]' }
     },
   },
   {
     key: 'sleep', label: '睡眠',
     cell: (w) => {
       if (w?.sleep_hours == null) return { v: '', c: '' }
-      return { v: numUnit(w.sleep_hours, 'h'), c: w.sleep_hours >= 5.5 ? 'text-gray-800 text-base' : 'text-red-500 text-base' }
+      return { v: numUnit(w.sleep_hours, 'h'), c: w.sleep_hours >= 5.5 ? 'text-gray-800 text-[19px]' : 'text-red-500 text-[19px]' }
     },
   },
 ]
@@ -179,12 +179,12 @@ const DOW = ['日','月','火','水','木','金','土']
 function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, onScroll, onDateClick, scrollClass }) {
   return (
     <div className={`overflow-x-auto${scrollClass ? ` ${scrollClass}` : ''}`} ref={scrollRef} onScroll={onScroll}>
-      <table className="border-collapse text-xs" style={{ minWidth: `${allDays.length * 44 + 80}px` }}>
+      <table className="border-collapse text-[15px]" style={{ minWidth: `${allDays.length * 52 + 96}px` }}>
         <thead>
           <tr>
             {/* 左固定：項目名 */}
             <th className="sticky left-0 z-20 bg-gray-50 text-left text-gray-600 font-medium
-              px-3 py-2 border-r border-b border-gray-200 whitespace-nowrap min-w-[5rem]">
+              px-3 py-2 border-r border-b border-gray-200 whitespace-nowrap min-w-[6rem]">
               項目
             </th>
             {allDays.map(({ year, month, day, dateStr }) => {
@@ -202,7 +202,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
                   data-month={isFirst ? ym : undefined}
                   onClick={() => onDateClick?.(dateStr, wMap[dateStr] ?? null)}
                   className={[
-                    'text-center px-1 py-1.5 border-b min-w-[2.8rem]',
+                    'text-center px-1 py-1.5 border-b min-w-[3.3rem]',
                     isFirst ? 'border-l-2 border-l-gray-300' : '',
                     isToday
                       ? 'bg-yellow-200 border-b-2 border-b-yellow-500 text-yellow-800 font-bold'
@@ -230,7 +230,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
           {rows.map((row, ri) => (
             <tr key={row.key} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}>
               <td className={`sticky left-0 z-10 px-3 py-2 font-semibold text-gray-800
-                border-r border-gray-200 whitespace-nowrap
+                border-r border-gray-200 whitespace-nowrap min-w-[6rem]
                 ${ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                 {row.label}
               </td>
@@ -357,7 +357,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     if (!ref) return
     const el = ref.querySelector(`[data-today="true"]`) || ref.querySelector(`[data-month="${targetDateStr}"]`)
     if (!el) return
-    const stickyW = 80
+    const stickyW = 96
     let left
     if (center) {
       const cw = ref.clientWidth
@@ -375,7 +375,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     const key = `${y}-${pad(m)}`
     const el  = ref.querySelector(`[data-month="${key}"]`)
     if (!el) return
-    const left = Math.max(0, el.offsetLeft - 80)
+    const left = Math.max(0, el.offsetLeft - 96)
     ref.scrollLeft = left
     if (scrollRef2.current) scrollRef2.current.scrollLeft = left
   }
@@ -384,7 +384,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
   function calcVisibleMonths(container) {
     if (!container) return ''
     const { scrollLeft, clientWidth } = container
-    const stickyW  = 88
+    const stickyW  = 96
     const viewLeft  = scrollLeft + stickyW
     const viewRight = scrollLeft + clientWidth
     const ths = Array.from(container.querySelectorAll('thead th[data-ym]'))
@@ -427,7 +427,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
         className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
         ← 前月
       </button>
-      <span className="text-sm font-bold text-gray-700 w-24 text-center">
+      <span className="text-[17px] font-bold text-gray-700 w-24 text-center">
         {selYear}年{selMonth}月
       </span>
       <button onClick={() => navigate(1)}
@@ -454,9 +454,9 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
         <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">
           <div className="flex items-center justify-center mb-2">{Nav}</div>
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-600">表1：体調・生活記録</h2>
+            <h2 className="text-[17px] font-semibold text-gray-600">表1：体調・生活記録</h2>
             {/* 現在表示中の月ラベル */}
-            <p className="text-base font-semibold text-gray-700 min-w-[5rem] text-right">
+            <p className="text-[19px] font-semibold text-gray-700 min-w-[5rem] text-right">
               {visibleMonthLabel}
             </p>
           </div>
@@ -467,7 +467,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
               todayStr={todayStr} selectedDate={selectedDate}
               scrollRef={scrollRef1} onScroll={handleScroll1}
               onDateClick={onDateClick} scrollClass="table1-scroll" />
-            <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
+            <div className="px-5 py-2.5 border-t border-gray-100 text-[15px] text-gray-400">
               <span className="text-red-500 font-medium">赤字</span>＝朝→夜差 +0.6kg以上・水分 1.4L以下・トイレ 9回以下・睡眠 5時間以下
             </div>
           </>
@@ -480,7 +480,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
       {/* ── 表2：食事・記録状況 ── */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">
-          <h2 className="text-sm font-semibold text-gray-600">表2：食事・記録状況</h2>
+          <h2 className="text-[17px] font-semibold text-gray-600">表2：食事・記録状況</h2>
         </div>
         {loading ? Spinner : (
           <>
@@ -488,7 +488,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
               todayStr={todayStr} selectedDate={selectedDate}
               scrollRef={scrollRef2} onScroll={handleScroll2}
               onDateClick={onDateClick} />
-            <div className="px-5 py-2.5 border-t border-gray-100 text-xs text-gray-400">
+            <div className="px-5 py-2.5 border-t border-gray-100 text-[15px] text-gray-400">
               スコア：<span className="text-blue-600 font-medium">90点以上</span>＝優秀
               <span className="text-green-600 font-medium">80〜89点</span>＝良好
               <span className="text-orange-500 font-medium">70〜79点</span>＝注意
