@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import BackButton from '../../components/BackButton'
 import { SELECTED_STORE_STORAGE_KEY, STORE_QUERY_PARAM } from '../../lib/clientListNav'
 import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
+import { fetchAllPages } from '../../lib/fetchAllPages'
+import { computeWeightSummary } from '../../lib/weightSummary'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -92,13 +94,23 @@ export default function ClientDetailPage() {
   async function fetchData() {
     const [clientRes, logsRes, mealRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', id).single(),
-      supabase.from('weight_logs').select('*').eq('client_id', id).order('date'),
+      // 全件をページ送りして取得（Supabase/PostgRESTの1000件上限による打ち切りを防ぐ。
+      // 一覧側の取得と同じ仕組み。長期利用の顧客ほど記録数が増え、上限に達しうる）
+      fetchAllPages((from, to) =>
+        supabase.from('weight_logs').select('*').eq('client_id', id)
+          .order('date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      ),
       supabase.from('meal_logs')
         .select('date, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
         .eq('client_id', id),
     ])
     if (clientRes.error) {
       setError(clientRes.error.message)
+    } else if (logsRes.error) {
+      console.error('[ClientDetailPage] weight_logs fetch error:', logsRes.error)
+      setError(`体重記録の取得に失敗しました：${logsRes.error.message}`)
     } else {
       setClient(clientRes.data)
       setLogs(logsRes.data ?? [])
@@ -276,14 +288,10 @@ export default function ClientDetailPage() {
   const yesterdayLog  = logs.find((l) => l.date === yesterdayStr) ?? null
   const yesterdayMeal = mealLogMap[yesterdayStr] ?? null
 
-  // 開始体重／最新体重：お客さん一覧（ClientListPage）と同じアルゴリズムで算出
-  // （logs は日付昇順のため、morning_kg が入っている最初/最後の値をそれぞれ採用）
-  let firstKg = null, currentKg = null
-  logs.forEach((l) => {
-    if (l.morning_kg != null && firstKg == null) firstKg = l.morning_kg
-    if (l.morning_kg != null) currentKg = l.morning_kg
-  })
-  const weightDiff = firstKg != null && currentKg != null ? +(currentKg - firstKg).toFixed(1) : null
+  // 開始体重／最新体重／体重差：お客さん一覧（ClientListPage）と全く同じ共有関数で算出。
+  // 同じ weight_logs に対して一覧・詳細で異なる結果が出ないようにするため、
+  // 個別に計算式を書かず computeWeightSummary を両画面から呼び出す。
+  const { startWeight: firstKg, latestWeight: currentKg, difference: weightDiff } = computeWeightSummary(logs)
 
   // チャート用：期間フィルタ
   const periodDays = PERIODS.find((p) => p.key === chartPeriod)?.days ?? 30

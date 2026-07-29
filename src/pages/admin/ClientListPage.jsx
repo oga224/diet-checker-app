@@ -11,6 +11,8 @@ import {
   RETURN_FLAG_STORAGE_KEY, scrollPosKey,
 } from '../../lib/clientListNav'
 import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
+import { fetchAllPages } from '../../lib/fetchAllPages'
+import { computeWeightSummary, findLatestLog } from '../../lib/weightSummary'
 
 const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -84,60 +86,96 @@ export default function ClientListPage() {
 
   async function fetchAll() {
     try {
+      // すべて fetchAllPages でページ送りしながら全件取得する。
+      // Supabase/PostgREST は1回のクエリで最大1000件までしか返さず、それ以上は
+      // エラーも出さずに黙って切り捨てられるため、店舗・顧客・記録が増えると
+      // 「一覧の一部の顧客だけ体重が—になる」といった不具合につながっていた。
+      // .order() には必ず一意な列（id）を含め、同着順による揺れ（ページ境界での
+      // 行の欠落・重複や、日によって対象が変わる現象）が起きないようにしている。
       const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
-        supabase.from('clients').select('*').order('kana'),
-        supabase.from('weight_logs').select('*').eq('date', todayStr),
-        supabase.from('meal_logs')
-          .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
-          .eq('date', todayStr),
-        supabase.from('weight_logs')
-          .select('client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
-          .order('date', { ascending: true }),
+        fetchAllPages((from, to) =>
+          supabase.from('clients').select('*').order('kana').order('id').range(from, to)
+        ),
+        fetchAllPages((from, to) =>
+          supabase.from('weight_logs').select('*').eq('date', todayStr).order('id').range(from, to)
+        ),
+        fetchAllPages((from, to) =>
+          supabase.from('meal_logs')
+            .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
+            .eq('date', todayStr).order('id').range(from, to)
+        ),
+        fetchAllPages((from, to) =>
+          supabase.from('weight_logs')
+            .select('id, client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
+            .order('date', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
         // コメント件数（RLS エラーでも空配列として扱う）
-        supabase.from('admin_comments').select('client_id').eq('sender', 'client'),
+        fetchAllPages((from, to) =>
+          supabase.from('admin_comments').select('client_id').eq('sender', 'client').order('client_id').range(from, to)
+        ),
       ])
 
       if (clientsRes.error) {
-        console.error('clients fetch error:', clientsRes.error)
-        setError(clientsRes.error.message)
+        console.error('[ClientListPage] clients fetch error:', clientsRes.error)
+        setError(`顧客一覧の取得に失敗しました：${clientsRes.error.message}`)
       } else {
         setClients(clientsRes.data ?? [])
       }
 
-      if (!logsRes.error && logsRes.data) {
+      if (logsRes.error) {
+        console.error('[ClientListPage] today weight_logs fetch error:', logsRes.error)
+        setError((prev) => prev ?? `今日の記録の取得に失敗しました：${logsRes.error.message}`)
+      } else {
         const map = {}
         logsRes.data.forEach((l) => { map[l.client_id] = l })
         setTodayLogs(map)
       }
-      if (!mealsRes.error && mealsRes.data) {
+
+      if (mealsRes.error) {
+        console.error('[ClientListPage] today meal_logs fetch error:', mealsRes.error)
+      } else {
         const map = {}
         mealsRes.data.forEach((m) => { map[m.client_id] = m })
         setTodayMeals(map)
       }
-      if (!wHistRes.error && wHistRes.data) {
-        const map = {}
+
+      if (wHistRes.error) {
+        // 体重履歴の取得に失敗した場合、「記録なし」として黙って—表示にはしない。
+        console.error('[ClientListPage] weight history fetch error:', wHistRes.error)
+        setError((prev) => prev ?? `体重履歴の取得に失敗しました：${wHistRes.error.message}`)
+      } else {
+        // 顧客ごとにグループ化してから、一覧・詳細で共通の computeWeightSummary で算出する
+        const byClient = {}
         wHistRes.data.forEach((l) => {
-          if (!map[l.client_id]) {
-            map[l.client_id] = { firstKg: null, latestKg: null, lastDate: null, latestLog: null }
+          ;(byClient[l.client_id] ??= []).push(l)
+        })
+        const map = {}
+        Object.keys(byClient).forEach((clientId) => {
+          const rows = byClient[clientId]
+          const summary  = computeWeightSummary(rows)
+          const lastLog  = findLatestLog(rows) // 体重の有無に関わらず「最後に記録した日」
+          map[clientId] = {
+            firstKg:   summary.startWeight,
+            latestKg:  summary.latestWeight,
+            lastDate:  lastLog?.date ?? null,
+            latestLog: lastLog,
           }
-          const e = map[l.client_id]
-          if (l.morning_kg != null && !e.firstKg) e.firstKg = l.morning_kg
-          if (l.morning_kg != null) e.latestKg = l.morning_kg
-          e.lastDate  = l.date
-          e.latestLog = l
         })
         setWeightHistory(map)
       }
+
       // コメント件数（RLS エラーは無視して空として扱う）
-      if (!commentsRes.error && commentsRes.data) {
+      if (commentsRes.error) {
+        console.warn('[ClientListPage] admin_comments fetch (non-critical):', commentsRes.error.message)
+      } else {
         const map = {}
         commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
         setCommentCounts(map)
-      } else if (commentsRes.error) {
-        console.warn('admin_comments fetch (non-critical):', commentsRes.error.message)
       }
     } catch (err) {
-      console.error('fetchAll unexpected error:', err)
+      console.error('[ClientListPage] fetchAll unexpected error:', err)
       setError('データの取得中にエラーが発生しました')
     } finally {
       setLoading(false)  // 必ず loading を解除

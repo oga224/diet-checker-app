@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDaysInMonth, format, parseISO } from 'date-fns'
-import { supabase }    from '../../lib/supabase'
-import { evaluateLog } from '../../lib/evaluateLog'
+import { supabase }       from '../../lib/supabase'
+import { evaluateLog }    from '../../lib/evaluateLog'
+import { fetchAllPages }  from '../../lib/fetchAllPages'
 
 // ── ヘルパー ─────────────────────────────────────────────────
 function addMonth(y, m, delta) {
@@ -325,13 +326,22 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
       const endStr   = `${endY}-${pad(endM)}-${pad(endD)}`
 
       const [wRes, mRes] = await Promise.all([
-        supabase.from('weight_logs').select('*')
-          .eq('client_id', clientId).gte('date', startStr).lte('date', endStr),
+        // 長期利用の顧客は記録数が1000件を超えうるため、ページ送りして全件取得する
+        fetchAllPages((from, to) =>
+          supabase.from('weight_logs').select('*')
+            .eq('client_id', clientId).gte('date', startStr).lte('date', endStr)
+            .order('date', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
         supabase.from('meal_logs')
           .select('date, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
           .eq('client_id', clientId).gte('date', startStr).lte('date', endStr),
       ])
 
+      if (wRes.error) {
+        console.error('[MonthlyTable] weight_logs fetch error:', wRes.error)
+      }
       const wm = {}; (wRes.data ?? []).forEach(l => { wm[l.date] = l })
       const mm = {}; (mRes.data ?? []).forEach(l => { mm[l.date] = l })
       setWMap(wm); setMMap(mm)
