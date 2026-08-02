@@ -19,7 +19,7 @@ insert into stores (name, code) values
   ('ASAKA整体院',   'A'),
   ('つむぎ整体院',  'T'),
   ('せせらぎ整体',  'S'),
-  ('ReCORE接骨院',  'R')
+  ('ReSOLA接骨院',  'R')
 on conflict (code) do update set name = excluded.name;
 
 -- 3. clients テーブルに customer_number カラムを追加
