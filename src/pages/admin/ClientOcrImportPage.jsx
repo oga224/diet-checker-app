@@ -1,7 +1,26 @@
 import { useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { FunctionsHttpError, FunctionsRelayError, FunctionsFetchError } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import BackButton from '../../components/BackButton'
+
+// ── 共通定数（Function側 supabase/functions/ocr-to-csv/index.ts と同じ値）────
+const MAX_IMAGES = 10
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024          // 5 MiB（圧縮後の1画像あたり）
+const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024   // 20 MiB（圧縮後の全画像合計）
+// 元ファイル選択時の上限（ブラウザ負荷防止のみが目的。圧縮後は5MiBよりずっと小さくなりうるため
+// 元ファイルの大きさだけで即座に拒否はしない）
+const MAX_ORIGINAL_FILE_BYTES = 25 * 1024 * 1024 // 25 MiB
+const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const DATA_URL_RE = /^data:([^;]+);base64,([A-Za-z0-9+/]*={0,2})$/
+
+/** base64文字列（padding含む）から、デコード後の正確なバイト数を計算する（Function側と同じ式） */
+function base64ByteLength(base64) {
+  let padding = 0
+  if (base64.endsWith('==')) padding = 2
+  else if (base64.endsWith('=')) padding = 1
+  return (base64.length * 3) / 4 - padding
+}
 
 // ── 画像圧縮（OCR精度のため最大1600px） ─────────────────────────
 function compressForOcr(file) {
@@ -124,9 +143,40 @@ export default function ClientOcrImportPage() {
 
   // ── 画像追加 ──────────────────────────────────────────────
   function addImages(files) {
-    const allowed = Array.from(files).filter(f => f.type.startsWith('image/'))
-    if (!allowed.length) return
-    const newImages = allowed.map(file => ({
+    const incoming = Array.from(files)
+    const errors = []
+    const accepted = []
+
+    const isDuplicate = (file, others) => others.some(f =>
+      f.name === file.name && f.size === file.size && f.lastModified === file.lastModified
+    )
+
+    for (const file of incoming) {
+      if (!ALLOWED_MIME_TYPES.has(file.type)) {
+        errors.push(`${file.name}: 対応していない形式です（JPEG・PNG・WebPのみ）`)
+        continue
+      }
+      if (file.size > MAX_ORIGINAL_FILE_BYTES) {
+        errors.push(`${file.name}: 元画像の容量が大きすぎます。25MB以下の画像を選択してください`)
+        continue
+      }
+      if (isDuplicate(file, images.map(img => img.file)) || isDuplicate(file, accepted)) {
+        errors.push(`${file.name}: 既に選択されています`)
+        continue
+      }
+      accepted.push(file)
+    }
+
+    const remainingSlots = Math.max(MAX_IMAGES - images.length, 0)
+    if (accepted.length > remainingSlots) {
+      errors.push(`画像は最大${MAX_IMAGES}枚までです`)
+    }
+    const toAdd = accepted.slice(0, remainingSlots)
+
+    if (errors.length) setOcrError(errors.join('\n'))
+    if (!toAdd.length) return
+
+    const newImages = toAdd.map(file => ({
       file,
       previewUrl: URL.createObjectURL(file),
       name: file.name,
@@ -149,6 +199,29 @@ export default function ClientOcrImportPage() {
     addImages(e.dataTransfer.files)
   }, [])
 
+  // ── Edge Functionのエラーから、利用者向けメッセージを安全に取り出す ──
+  // 優先順位: 1. Function本文のerror（安全に取得できた場合） 2. status対応の固定文言 3. 一般フォールバック
+  async function resolveOcrErrorMessage(error) {
+    if (error instanceof FunctionsHttpError) {
+      const status = error.context?.status
+      let body = null
+      try { body = await error.context?.json() } catch { body = null }
+      const safeMessage = body && typeof body === 'object' && typeof body.error === 'string'
+        ? body.error
+        : null
+      if (safeMessage) return safeMessage
+      if (status === 401) return 'ログイン状態を確認できませんでした。再ログインしてください'
+      if (status === 403) return 'この機能を利用する権限がありません'
+      if (status === 413) return '画像の枚数または容量が上限を超えています'
+      if (status === 415) return '対応していない画像形式が含まれています'
+      if (status === 503) return '画像読み取りサービスが混雑しています。しばらくしてから再度お試しください'
+      return '画像の読み取りに失敗しました'
+    }
+    if (error instanceof FunctionsRelayError) return 'サーバーとの通信中にエラーが発生しました'
+    if (error instanceof FunctionsFetchError) return '画像読み取りサーバーへ接続できませんでした'
+    return error?.message || '画像の読み取りに失敗しました'
+  }
+
   // ── OCR実行 ───────────────────────────────────────────────
   async function handleOcr() {
     if (!images.length) return
@@ -157,26 +230,36 @@ export default function ClientOcrImportPage() {
       // 圧縮してbase64に変換
       const base64Images = await Promise.all(images.map(img => compressForOcr(img.file)))
 
+      // ── 圧縮後の検証（Function呼び出し前。Function側と同じ上限・計算式）──
+      if (base64Images.length > MAX_IMAGES) {
+        throw new Error(`画像は最大${MAX_IMAGES}枚までです`)
+      }
+      const seenDataUrls = new Set()
+      let totalBytes = 0
+      for (let i = 0; i < base64Images.length; i++) {
+        const dataUrl = base64Images[i]
+        const match = typeof dataUrl === 'string' ? dataUrl.match(DATA_URL_RE) : null
+        if (!match) throw new Error(`画像${i + 1}: 圧縮結果の形式が不正です`)
+        const [, mediaType, base64] = match
+        if (!ALLOWED_MIME_TYPES.has(mediaType)) throw new Error(`画像${i + 1}: 対応していない形式です`)
+        if (seenDataUrls.has(dataUrl)) throw new Error(`画像${i + 1}: 同じ画像が重複しています`)
+        seenDataUrls.add(dataUrl)
+
+        const bytes = base64ByteLength(base64)
+        if (bytes > MAX_IMAGE_BYTES) throw new Error(`画像${i + 1}: 圧縮後も容量が大きすぎます`)
+        totalBytes += bytes
+        if (totalBytes > MAX_TOTAL_IMAGE_BYTES) throw new Error('画像の合計容量が上限を超えています')
+      }
+
       const { data, error } = await supabase.functions.invoke('ocr-to-csv', {
         body: { images: base64Images },
       })
 
-      // Edge Function が非2xxを返した場合（デプロイ未済・CORS等）
       if (error) {
-        const msg = error.message ?? ''
-        if (msg.includes('non-2xx') || msg.includes('Failed to send')) {
-          throw new Error(
-            'Edge Function に接続できませんでした。\n\n' +
-            '以下を確認してください：\n' +
-            '① ocr-to-csv が Supabase にデプロイ済みか\n' +
-            '② ANTHROPIC_API_KEY が Supabase Secrets に設定済みか\n\n' +
-            `詳細: ${msg}`
-          )
-        }
-        throw new Error(msg || 'Edge Function エラー')
+        throw new Error(await resolveOcrErrorMessage(error))
       }
 
-      // Edge Function 内のエラー（常に200で返すためこちらに入る）
+      // Edge Function 内のエラー（HTTP 200 + body.error のパターンも維持）
       if (data?.error) throw new Error(data.error)
 
       const extracted = (data?.rows ?? []).filter(r => r.date)
@@ -306,13 +389,6 @@ export default function ClientOcrImportPage() {
               <div className={`text-sm whitespace-pre-line ${ocrError.startsWith('⚠️') ? 'text-orange-600' : 'text-red-600'}`}>
                 {ocrError.replace(/^⚠️\s*/, '')}
               </div>
-              {ocrError.includes('デプロイ') && (
-                <div className="mt-3 bg-white rounded-lg border border-red-200 px-4 py-3 text-xs text-gray-600 font-mono space-y-1">
-                  <p className="font-bold text-gray-700 font-sans">デプロイコマンド（ターミナルで実行）:</p>
-                  <p>npx supabase functions deploy ocr-to-csv</p>
-                  <p>npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...</p>
-                </div>
-              )}
             </div>
             <button onClick={() => setOcrError(null)} className="flex-shrink-0 text-gray-300 hover:text-gray-500 text-lg">✕</button>
           </div>
@@ -349,7 +425,7 @@ export default function ClientOcrImportPage() {
                 className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 text-sm">
                 画像を選ぶ
               </button>
-              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden"
                 onChange={e => addImages(e.target.files)} />
             </div>
 
