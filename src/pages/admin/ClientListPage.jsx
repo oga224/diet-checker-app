@@ -13,6 +13,7 @@ import {
 import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
 import { fetchAllPages } from '../../lib/fetchAllPages'
 import { computeWeightSummary, findLatestLog } from '../../lib/weightSummary'
+import { fetchOtherStoreClients, anonClientLabel } from '../../lib/otherStoreApi'
 
 const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -59,12 +60,15 @@ function entryDays(clientId, todayLogs, weightHistory) {
 
 export default function ClientListPage() {
   // ── useState を先に宣言（Reactのhooksルール）──
-  const [clients,       setClients]       = useState([])
+  const [clients,       setClients]       = useState([])  // 自店舗（super_adminは全店舗）を直接取得した顧客
+  const [otherClients,  setOtherClients]  = useState([])  // 他店舗をRPC経由で取得した匿名化済み顧客
   const [todayLogs,     setTodayLogs]     = useState({})
   const [todayMeals,    setTodayMeals]    = useState({})
   const [weightHistory, setWeightHistory] = useState({})
   const [commentCounts, setCommentCounts] = useState({})
   const [loading,       setLoading]       = useState(true)
+  const [otherLoading,  setOtherLoading]  = useState(false)
+  const [otherFetchError, setOtherFetchError] = useState(null) // 他店舗RPCが失敗した場合のみセット（0件とは区別する）
   const [error,         setError]         = useState(null)
   const [showForm,      setShowForm]      = useState(false)
   const [submitting,    setSubmitting]    = useState(false)
@@ -76,6 +80,10 @@ export default function ClientListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [nameHidden, setNameHidden] = useState(readNameHidden)     // 氏名非表示モード（タブ内で維持）
 
+  // データ取得の分岐（自店舗direct／他店舗RPC）に使うため、useState群の直後で呼ぶ
+  const { signOut, profile } = useAuth()
+  const isSuperAdmin = profile?.is_super_admin === true
+
   function toggleNameHidden() {
     setNameHidden((prev) => {
       const next = !prev
@@ -84,115 +92,188 @@ export default function ClientListPage() {
     })
   }
 
-  async function fetchAll() {
+  function showToast(type, msg) {
+    setToast({ type, msg })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  // today's weight_logs / meal_logs / 体重履歴 / コメント件数の反映
+  // （自店舗direct・super_admin全件directの両方から共通で呼ばれる後処理）
+  function applyLogResults(logsRes, mealsRes, wHistRes, commentsRes) {
+    if (logsRes.error) {
+      console.error('[ClientListPage] today weight_logs fetch error:', logsRes.error)
+      setError((prev) => prev ?? `今日の記録の取得に失敗しました：${logsRes.error.message}`)
+    } else {
+      const map = {}
+      logsRes.data.forEach((l) => { map[l.client_id] = l })
+      setTodayLogs(map)
+    }
+
+    if (mealsRes.error) {
+      console.error('[ClientListPage] today meal_logs fetch error:', mealsRes.error)
+    } else {
+      const map = {}
+      mealsRes.data.forEach((m) => { map[m.client_id] = m })
+      setTodayMeals(map)
+    }
+
+    if (wHistRes.error) {
+      // 体重履歴の取得に失敗した場合、「記録なし」として黙って—表示にはしない。
+      console.error('[ClientListPage] weight history fetch error:', wHistRes.error)
+      setError((prev) => prev ?? `体重履歴の取得に失敗しました：${wHistRes.error.message}`)
+    } else {
+      const byClient = {}
+      wHistRes.data.forEach((l) => {
+        ;(byClient[l.client_id] ??= []).push(l)
+      })
+      const map = {}
+      Object.keys(byClient).forEach((clientId) => {
+        const rows = byClient[clientId]
+        const summary  = computeWeightSummary(rows)
+        const lastLog  = findLatestLog(rows) // 体重の有無に関わらず「最後に記録した日」
+        map[clientId] = {
+          firstKg:   summary.startWeight,
+          latestKg:  summary.latestWeight,
+          lastDate:  lastLog?.date ?? null,
+          latestLog: lastLog,
+        }
+      })
+      setWeightHistory(map)
+    }
+
+    // コメント件数（RLS エラーは無視して空として扱う）
+    if (commentsRes.error) {
+      console.warn('[ClientListPage] admin_comments fetch (non-critical):', commentsRes.error.message)
+    } else {
+      const map = {}
+      commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
+      setCommentCounts(map)
+    }
+  }
+
+  // ── 自店舗（super_adminは全店舗）を直接取得 ─────────────────────
+  // 他店舗の clients / weight_logs / meal_logs は、この関数では絶対に取得しない。
+  async function fetchOwnScopeData() {
     try {
-      // すべて fetchAllPages でページ送りしながら全件取得する。
-      // Supabase/PostgREST は1回のクエリで最大1000件までしか返さず、それ以上は
-      // エラーも出さずに黙って切り捨てられるため、店舗・顧客・記録が増えると
-      // 「一覧の一部の顧客だけ体重が—になる」といった不具合につながっていた。
-      // .order() には必ず一意な列（id）を含め、同着順による揺れ（ページ境界での
-      // 行の欠落・重複や、日によって対象が変わる現象）が起きないようにしている。
-      const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
+      if (isSuperAdmin) {
+        // super_admin：既存どおり全店舗・全情報への直接アクセスを維持する（RPCへは切り替えない）
+        const [clientsRes, logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
+          fetchAllPages((from, to) =>
+            supabase.from('clients').select('*').order('kana').order('id').range(from, to)
+          ),
+          fetchAllPages((from, to) =>
+            supabase.from('weight_logs').select('*').eq('date', todayStr).order('id').range(from, to)
+          ),
+          fetchAllPages((from, to) =>
+            supabase.from('meal_logs')
+              .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
+              .eq('date', todayStr).order('id').range(from, to)
+          ),
+          fetchAllPages((from, to) =>
+            supabase.from('weight_logs')
+              .select('id, client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
+              .order('date', { ascending: true })
+              .order('id', { ascending: true })
+              .range(from, to)
+          ),
+          fetchAllPages((from, to) =>
+            supabase.from('admin_comments').select('client_id').eq('sender', 'client').order('client_id').range(from, to)
+          ),
+        ])
+        if (clientsRes.error) {
+          console.error('[ClientListPage] clients fetch error:', clientsRes.error)
+          setError(`顧客一覧の取得に失敗しました：${clientsRes.error.message}`)
+        } else {
+          setClients(clientsRes.data ?? [])
+        }
+        applyLogResults(logsRes, mealsRes, wHistRes, commentsRes)
+        return
+      }
+
+      // 通常admin：自店舗のみを直接取得する（他店舗は fetchOtherScopeData で RPC 経由のみ）
+      if (!profile?.store_id) {
+        setClients([])
+        return
+      }
+      const clientsRes = await fetchAllPages((from, to) =>
+        supabase.from('clients').select('*').eq('store_id', profile.store_id).order('kana').order('id').range(from, to)
+      )
+      if (clientsRes.error) {
+        console.error('[ClientListPage] clients fetch error:', clientsRes.error)
+        setError(`顧客一覧の取得に失敗しました：${clientsRes.error.message}`)
+        return
+      }
+      const ownIds = (clientsRes.data ?? []).map((c) => c.id)
+      setClients(clientsRes.data ?? [])
+      if (ownIds.length === 0) return
+
+      const [logsRes, mealsRes, wHistRes, commentsRes] = await Promise.all([
         fetchAllPages((from, to) =>
-          supabase.from('clients').select('*').order('kana').order('id').range(from, to)
-        ),
-        fetchAllPages((from, to) =>
-          supabase.from('weight_logs').select('*').eq('date', todayStr).order('id').range(from, to)
+          supabase.from('weight_logs').select('*').eq('date', todayStr).in('client_id', ownIds).order('id').range(from, to)
         ),
         fetchAllPages((from, to) =>
           supabase.from('meal_logs')
             .select('client_id, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
-            .eq('date', todayStr).order('id').range(from, to)
+            .eq('date', todayStr).in('client_id', ownIds).order('id').range(from, to)
         ),
         fetchAllPages((from, to) =>
           supabase.from('weight_logs')
             .select('id, client_id, date, morning_kg, water_ml, sleep_hours, toilet_count, bowel_movement, ate_breakfast, ate_lunch, ate_dinner, ate_snack, comment')
+            .in('client_id', ownIds)
             .order('date', { ascending: true })
             .order('id', { ascending: true })
             .range(from, to)
         ),
-        // コメント件数（RLS エラーでも空配列として扱う）
         fetchAllPages((from, to) =>
-          supabase.from('admin_comments').select('client_id').eq('sender', 'client').order('client_id').range(from, to)
+          supabase.from('admin_comments').select('client_id').eq('sender', 'client').in('client_id', ownIds).order('client_id').range(from, to)
         ),
       ])
-
-      if (clientsRes.error) {
-        console.error('[ClientListPage] clients fetch error:', clientsRes.error)
-        setError(`顧客一覧の取得に失敗しました：${clientsRes.error.message}`)
-      } else {
-        setClients(clientsRes.data ?? [])
-      }
-
-      if (logsRes.error) {
-        console.error('[ClientListPage] today weight_logs fetch error:', logsRes.error)
-        setError((prev) => prev ?? `今日の記録の取得に失敗しました：${logsRes.error.message}`)
-      } else {
-        const map = {}
-        logsRes.data.forEach((l) => { map[l.client_id] = l })
-        setTodayLogs(map)
-      }
-
-      if (mealsRes.error) {
-        console.error('[ClientListPage] today meal_logs fetch error:', mealsRes.error)
-      } else {
-        const map = {}
-        mealsRes.data.forEach((m) => { map[m.client_id] = m })
-        setTodayMeals(map)
-      }
-
-      if (wHistRes.error) {
-        // 体重履歴の取得に失敗した場合、「記録なし」として黙って—表示にはしない。
-        console.error('[ClientListPage] weight history fetch error:', wHistRes.error)
-        setError((prev) => prev ?? `体重履歴の取得に失敗しました：${wHistRes.error.message}`)
-      } else {
-        // 顧客ごとにグループ化してから、一覧・詳細で共通の computeWeightSummary で算出する
-        const byClient = {}
-        wHistRes.data.forEach((l) => {
-          ;(byClient[l.client_id] ??= []).push(l)
-        })
-        const map = {}
-        Object.keys(byClient).forEach((clientId) => {
-          const rows = byClient[clientId]
-          const summary  = computeWeightSummary(rows)
-          const lastLog  = findLatestLog(rows) // 体重の有無に関わらず「最後に記録した日」
-          map[clientId] = {
-            firstKg:   summary.startWeight,
-            latestKg:  summary.latestWeight,
-            lastDate:  lastLog?.date ?? null,
-            latestLog: lastLog,
-          }
-        })
-        setWeightHistory(map)
-      }
-
-      // コメント件数（RLS エラーは無視して空として扱う）
-      if (commentsRes.error) {
-        console.warn('[ClientListPage] admin_comments fetch (non-critical):', commentsRes.error.message)
-      } else {
-        const map = {}
-        commentsRes.data.forEach((c) => { map[c.client_id] = (map[c.client_id] || 0) + 1 })
-        setCommentCounts(map)
-      }
+      applyLogResults(logsRes, mealsRes, wHistRes, commentsRes)
     } catch (err) {
-      console.error('[ClientListPage] fetchAll unexpected error:', err)
+      console.error('[ClientListPage] fetchOwnScopeData unexpected error:', err)
       setError('データの取得中にエラーが発生しました')
     } finally {
-      setLoading(false)  // 必ず loading を解除
+      setLoading(false)
     }
   }
 
-  useEffect(() => { fetchAll() }, [])
+  // ── 他店舗（複数可）を admin_list_other_store_clients RPC 経由で匿名化取得 ──
+  // clients / weight_logs / meal_logs への直接アクセスは一切行わない。
+  // 一部の店舗の取得が失敗した場合、その店舗だけを黙って一覧から除外しない。
+  // 失敗を検知した場合は、成功した店舗分のみ表示しつつ、永続的なエラー表示で
+  // 「一覧が不完全である可能性」を明示する（トーストのように自動で消える表示にはしない）。
+  async function fetchOtherScopeData(storeIds) {
+    setOtherLoading(true)
+    setOtherFetchError(null)
+    try {
+      const results = await Promise.all(storeIds.map((sid) => fetchOtherStoreClients(sid)))
+      const merged = []
+      let hadError = false
+      results.forEach((r) => {
+        if (r.error) {
+          console.error('[ClientListPage] other-store clients fetch error:', r.error)
+          hadError = true
+          return
+        }
+        merged.push(...(r.data ?? []))
+      })
+      // 既存の画面ロジック（c.id 参照）と互換にするため client_id → id を付与する
+      setOtherClients(merged.map((r) => ({ ...r, id: r.client_id })))
+      if (hadError) {
+        setOtherFetchError('他店舗の顧客データの取得に失敗した店舗があります。表示されている他店舗の件数は不完全な可能性があります。')
+      }
+    } finally {
+      setOtherLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchOwnScopeData() }, [])
 
   // 店舗リストを取得（一度だけ）
   useEffect(() => {
     supabase.from('stores').select('id, name, code').order('name')
       .then(({ data }) => { if (data) setStores(data) })
   }, [])
-
-  // ── useAuth は useState / useEffect の後（hooks の順序維持）──
-  const { signOut, profile } = useAuth()
-  const isSuperAdmin = profile?.is_super_admin === true
 
   // プロフィール読み込み後、URLのstoreパラメータを優先して店舗フィルタを初期化（一度だけ）。
   // URLに無ければ自店舗をデフォルトにして、履歴を汚さないようreplaceでURLへ反映する。
@@ -211,6 +292,25 @@ export default function ClientListPage() {
       }
     }
   }, [profile, storeFilterReady])
+
+  // 選択中の店舗に応じて、他店舗データ（RPC経由）を取得する。
+  // super_admin は RPC を使わず既存の直接アクセスのみで全店舗を見られるため対象外。
+  useEffect(() => {
+    if (isSuperAdmin) return
+    if (!storeFilterReady) return
+    if (selectedStoreId === (profile?.store_id || null)) {
+      setOtherClients([])
+      setOtherFetchError(null)
+      return
+    }
+    if (selectedStoreId === null) {
+      const others = stores.filter((s) => s.id !== profile?.store_id).map((s) => s.id)
+      if (others.length === 0) { setOtherClients([]); setOtherFetchError(null); return }
+      fetchOtherScopeData(others)
+    } else {
+      fetchOtherScopeData([selectedStoreId])
+    }
+  }, [selectedStoreId, storeFilterReady, isSuperAdmin, profile?.store_id, stores])
 
   // 店舗選択：state・URL・sessionStorage をまとめて更新
   function selectStore(storeId) {
@@ -260,15 +360,13 @@ export default function ClientListPage() {
     } catch { return false }
   }
 
+  // 表示対象：自店舗（またはsuper_adminの全件）＋ 選択中の他店舗（RPC取得分）
+  const allClients = isSuperAdmin ? clients : [...clients, ...otherClients]
+
   // 選択店舗でフィルタ
   const filteredClients = selectedStoreId === null
-    ? clients                                                  // 全店舗
-    : clients.filter(c => c.store_id === selectedStoreId)     // 特定店舗のみ
-
-  function showToast(type, msg) {
-    setToast({ type, msg })
-    setTimeout(() => setToast(null), 3500)
-  }
+    ? allClients                                                // 全店舗
+    : allClients.filter(c => c.store_id === selectedStoreId)   // 特定店舗のみ
 
   // 自店舗かどうかの確認（新規登録ボタン表示・保存処理の両方で使用）
   const canRegister = Boolean(
@@ -340,7 +438,7 @@ export default function ClientListPage() {
     } else {
       showToast('success', `${data.name} さんを登録しました`)
     }
-    fetchAll()
+    fetchOwnScopeData()
   }
 
   // ── ソート：未入力日数が多い順 → 今日入力済みはスコア低い順 → 終了者は末尾 ──
@@ -348,7 +446,7 @@ export default function ClientListPage() {
     const aActive = a.is_active !== false
     const bActive = b.is_active !== false
     if (aActive !== bActive) return aActive ? -1 : 1
-    if (!aActive) return (a.kana || a.name).localeCompare(b.kana || b.name, 'ja')
+    if (!aActive) return (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja')
     const aDays = entryDays(a.id, todayLogs, weightHistory)
     const bDays = entryDays(b.id, todayLogs, weightHistory)
     if (aDays !== bDays) return bDays - aDays // 日数多い順
@@ -360,8 +458,11 @@ export default function ClientListPage() {
     return 0
   })
 
-  const inputtedCount = filteredClients.filter((c) => todayLogs[c.id]).length
-  const notInputted   = filteredClients.length - inputtedCount
+  // 今日の入力状況サマリー：実データ（weight_logs）を取得している顧客のみで集計する。
+  // 他店舗（RPC取得・匿名化済み）は weight_logs を取得していないため対象外。
+  const dataAvailableClients = filteredClients.filter((c) => !isFromOtherStore(c))
+  const inputtedCount = dataAvailableClients.filter((c) => todayLogs[c.id]).length
+  const notInputted   = dataAvailableClients.length - inputtedCount
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -471,14 +572,15 @@ export default function ClientListPage() {
             <strong>エラー：</strong> {error}
           </div>
         )}
+        {otherFetchError && (
+          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+            <strong>エラー：</strong> {otherFetchError}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
-          </div>
-        ) : clients.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <p className="text-lg">お客さんが登録されていません</p>
           </div>
         ) : (
           <>
@@ -535,185 +637,202 @@ export default function ClientListPage() {
               )
             })()}
 
-            {/* サマリーバー */}
-            <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
-              <p className="text-sm text-gray-500">
-                今日（{format(new Date(), 'M月d日')}）の入力：
-                <span className="font-bold text-blue-600 ml-1">{inputtedCount}人</span>
-                <span className="text-gray-400"> / {filteredClients.length}人入力済</span>
-              </p>
-              {notInputted > 0 && (
-                <span className="text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
-                  {notInputted}人が未入力
-                </span>
-              )}
-            </div>
+            {/* サマリーバー（実データを取得している顧客のみで集計） */}
+            {dataAvailableClients.length > 0 && (
+              <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
+                <p className="text-sm text-gray-500">
+                  今日（{format(new Date(), 'M月d日')}）の入力：
+                  <span className="font-bold text-blue-600 ml-1">{inputtedCount}人</span>
+                  <span className="text-gray-400"> / {dataAvailableClients.length}人入力済</span>
+                </p>
+                {notInputted > 0 && (
+                  <span className="text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                    {notInputted}人が未入力
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {/* ── 見出し行（PCのみ） ── */}
-              <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] gap-x-4 px-5 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                <span>顧客</span>
-                <span className="text-right">開始体重</span>
-                <span className="text-right">最新体重</span>
-                <span className="text-right">体重差</span>
-                <span className="text-right">入力状況・注意</span>
-                <span />
-              </div>
+              {otherLoading ? (
+                <div className="flex justify-center py-16">
+                  <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                </div>
+              ) : filteredClients.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <p className="text-base">この店舗にはお客さんが登録されていません</p>
+                </div>
+              ) : (
+                <>
+                  {/* ── 見出し行（PCのみ） ── */}
+                  <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] gap-x-4 px-5 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
+                    <span>顧客</span>
+                    <span className="text-right">開始体重</span>
+                    <span className="text-right">最新体重</span>
+                    <span className="text-right">体重差</span>
+                    <span className="text-right">入力状況・注意</span>
+                    <span />
+                  </div>
 
-              {sorted.map((c, idx) => {
-                const wLog       = todayLogs[c.id]     ?? null
-                const mLog       = todayMeals[c.id]    ?? null
-                const hist       = weightHistory[c.id] ?? null
-                const commCnt    = commentCounts[c.id] ?? 0
-                const otherStore = isFromOtherStore(c)
-                const isInactive = c.is_active === false
-                const cnum = c.customer_number || ''
-                // 他店舗: 顧客番号 + 店舗名。自店舗: 顧客番号 + 氏名
-                const clientStore = stores.find(s => s.id === c.store_id)
-                // 顧客番号（小さく表示）と氏名（大きく表示）を分離。
-                // 他店舗閲覧時は氏名を一切表示せず、番号（無ければ仮ID）のみに留める＝匿名化を維持（既存仕様）。
-                // 氏名非表示モード（自店舗の閲覧のみが対象）は、その上にさらに重ねる表示切替。
-                const numberLabel = cnum || null
-                const nameLabel   = otherStore
-                  ? (cnum ? null : `ID-${c.id.slice(0, 6)}`)
-                  : nameHidden ? '氏名非表示' : c.name
-                const displaySub  = otherStore
-                  ? (clientStore ? clientStore.name : '他店舗')
-                  : nameHidden ? null : c.kana
+                  {(() => {
+                    let otherAnonCounter = 0
+                    return sorted.map((c, idx) => {
+                      const wLog       = todayLogs[c.id]     ?? null
+                      const mLog       = todayMeals[c.id]    ?? null
+                      const hist       = weightHistory[c.id] ?? null
+                      const commCnt    = commentCounts[c.id] ?? 0
+                      const otherStore = isFromOtherStore(c)
+                      const isInactive = c.is_active === false
+                      const anonIndex  = otherStore ? ++otherAnonCounter : null
+                      const clientStore = stores.find(s => s.id === c.store_id)
 
-                // 最新スコア：今日のログがあればそれを使用、なければ最新ログ（今日のログが無い場合は対象日を表示）
-                const scoreLog   = wLog ?? hist?.latestLog ?? null
-                const scoreMeal  = wLog ? mLog : null
-                const scoreEval  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal) : null
-                const scoreVal   = scoreEval ? scoreEval.score : null
-                const scoreClr   = scoreEval ? (scoreEval.isToday ? pendingColor() : scoreColor(scoreVal)) : null
-                const scoreLbl   = scoreEval ? (scoreEval.isToday ? '入力途中' : scoreLabel(scoreVal)) : null
-                const scoreDateLabel = scoreEval && !scoreEval.isToday && scoreLog?.date
-                  ? `${format(parseISO(scoreLog.date), 'M月d日')}の評価`
-                  : null
+                      // 他店舗閲覧時は氏名・顧客番号・UUIDを一切表示せず、一覧順の連番のみ（表示専用・DB保存なし）
+                      const numberLabel = otherStore ? null : (c.customer_number || null)
+                      const nameLabel   = otherStore
+                        ? anonClientLabel(anonIndex)
+                        : nameHidden ? '氏名非表示' : c.name
+                      const displaySub  = otherStore
+                        ? (clientStore ? clientStore.name : c.store_name || '他店舗')
+                        : nameHidden ? null : c.kana
 
-                // 進捗
-                const firstKg   = hist?.firstKg  ?? null
-                const latestKg  = wLog?.morning_kg ?? hist?.latestKg ?? null
-                const totalDiff = firstKg && latestKg ? +(latestKg - firstKg).toFixed(1) : null
-                const toGoal    = c.goal_weight && latestKg ? +(latestKg - c.goal_weight).toFixed(1) : null
-                const toGoalNode = toGoal !== null && (
-                  toGoal <= 0
-                    ? <span className="text-green-600 font-medium">達成！</span>
-                    : <>-{toGoal}kg</>
-                )
+                      // 最新スコア：他店舗はweight_logsを取得していないため常に非表示（statusBadgesで制御）
+                      const scoreLog   = wLog ?? hist?.latestLog ?? null
+                      const scoreMeal  = wLog ? mLog : null
+                      const scoreEval  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal) : null
+                      const scoreVal   = scoreEval ? scoreEval.score : null
+                      const scoreClr   = scoreEval ? (scoreEval.isToday ? pendingColor() : scoreColor(scoreVal)) : null
+                      const scoreLbl   = scoreEval ? (scoreEval.isToday ? '入力途中' : scoreLabel(scoreVal)) : null
+                      const scoreDateLabel = scoreEval && !scoreEval.isToday && scoreLog?.date
+                        ? `${format(parseISO(scoreLog.date), 'M月d日')}の評価`
+                        : null
 
-                const statusBadges = (
-                  <>
-                    <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
-                    {scoreVal !== null && (
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
-                        <span className="text-[14px]">{scoreVal}</span>点 {scoreLbl}
-                      </span>
-                    )}
-                    {scoreDateLabel && (
-                      <span className="text-[10px] text-gray-400 whitespace-nowrap">{scoreDateLabel}</span>
-                    )}
-                  </>
-                )
-                const subBadges = (
-                  <>
-                    {isInactive && (
-                      <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full whitespace-nowrap">
-                        終了
-                      </span>
-                    )}
-                    {!otherStore && commCnt > 0 && (
-                      <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full whitespace-nowrap">
-                        コメント <span className="text-[14px]">{commCnt}</span>件
-                      </span>
-                    )}
-                  </>
-                )
+                      // 進捗
+                      const firstKg   = hist?.firstKg  ?? null
+                      const latestKg  = wLog?.morning_kg ?? hist?.latestKg ?? null
+                      const totalDiff = firstKg && latestKg ? +(latestKg - firstKg).toFixed(1) : null
+                      const toGoal    = c.goal_weight && latestKg ? +(latestKg - c.goal_weight).toFixed(1) : null
+                      const toGoalNode = toGoal !== null && (
+                        toGoal <= 0
+                          ? <span className="text-green-600 font-medium">達成！</span>
+                          : <>-{toGoal}kg</>
+                      )
 
-                return (
-                  <Link
-                    key={c.id}
-                    to={`/admin/clients/${c.id}`}
-                    state={{ fromList: true }}
-                    onClick={handleRowClick}
-                    className={`group block border-b border-gray-100 last:border-b-0 transition-colors hover:bg-blue-50/70 ${idx % 2 === 1 ? 'bg-gray-50/60' : 'bg-white'} ${isInactive ? 'opacity-60' : ''}`}
-                  >
-                    {/* ── スマートフォン表示（2〜3段） ── */}
-                    <div className="md:hidden px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-baseline gap-2 min-w-0">
-                          {numberLabel && <span className="text-sm font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
-                          {nameLabel && (
-                            <span className="text-[19px] font-normal text-gray-900 truncate flex items-center gap-1">
-                              {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
-                              <span className="truncate">{nameLabel}</span>
+                      // 入力状況・スコアバッジ：他店舗はweight_logsを取得していないため表示しない
+                      // （データ欠落時にEntryBadgeが誤って「未入力」を出してしまうのを防ぐ）
+                      const statusBadges = !otherStore ? (
+                        <>
+                          <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
+                          {scoreVal !== null && (
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
+                              <span className="text-[14px]">{scoreVal}</span>点 {scoreLbl}
                             </span>
                           )}
-                        </div>
-                        <span className="text-gray-300 text-lg flex-shrink-0">›</span>
-                      </div>
-                      {displaySub && <p className="text-xs text-gray-400 mt-0.5 truncate">{displaySub}</p>}
-                      {(firstKg != null || latestKg != null || totalDiff !== null) && (
-                        <div className="flex items-center gap-3 text-sm text-gray-700 mt-1.5 flex-wrap">
-                          {firstKg  != null && <span>開始 <span className="text-[18px] font-semibold text-gray-900">{firstKg}kg</span></span>}
-                          {latestKg != null && <span>最新 <span className="text-[18px] font-semibold text-gray-900">{latestKg}kg</span></span>}
-                          {totalDiff !== null && (
-                            <span>
-                              差{' '}
-                              <span className={`text-[18px] font-normal ${totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
-                                {totalDiff >= 0 ? '+' : ''}{totalDiff}kg
-                              </span>
+                          {scoreDateLabel && (
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap">{scoreDateLabel}</span>
+                          )}
+                        </>
+                      ) : null
+                      const subBadges = (
+                        <>
+                          {isInactive && (
+                            <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded-full whitespace-nowrap">
+                              終了
                             </span>
                           )}
-                          {toGoalNode && <span className="text-xs text-gray-400">目標まで {toGoalNode}</span>}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        {statusBadges}
-                        {subBadges}
-                      </div>
-                    </div>
-
-                    {/* ── PC表示（表形式） ── */}
-                    <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] items-center gap-x-4 px-5 min-h-[78px]">
-                      <div className="min-w-0 flex items-baseline gap-2.5">
-                        {numberLabel && <span className="text-[15px] font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
-                        <div className="min-w-0">
-                          {nameLabel && (
-                            <p className="text-[20px] font-normal text-gray-900 truncate flex items-center gap-1.5">
-                              {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
-                              {nameLabel}
-                            </p>
+                          {!otherStore && commCnt > 0 && (
+                            <span className="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full whitespace-nowrap">
+                              コメント <span className="text-[14px]">{commCnt}</span>件
+                            </span>
                           )}
-                          {displaySub && <p className="text-xs text-gray-400 truncate">{displaySub}</p>}
-                        </div>
-                      </div>
-                      <div className="text-right text-[20px] font-medium text-gray-900">
-                        {firstKg != null ? `${firstKg}kg` : <span className="text-gray-300 font-normal">—</span>}
-                      </div>
-                      <div className="text-right text-[20px] font-medium text-gray-900">
-                        {latestKg != null ? `${latestKg}kg` : <span className="text-gray-300 font-normal">—</span>}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[20px] font-normal">
-                          {totalDiff !== null
-                            ? <span className={totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}>{totalDiff >= 0 ? '+' : ''}{totalDiff}kg</span>
-                            : <span className="text-gray-300 font-normal">—</span>}
-                        </p>
-                        {toGoalNode && <p className="text-[11px] text-gray-400 mt-0.5 whitespace-nowrap">目標まで {toGoalNode}</p>}
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">{statusBadges}</div>
-                        {(isInactive || (!otherStore && commCnt > 0)) && (
-                          <div className="flex items-center gap-1.5 flex-wrap justify-end">{subBadges}</div>
-                        )}
-                      </div>
-                      <div className="text-right text-gray-300 text-lg group-hover:text-blue-400 transition-colors">›</div>
-                    </div>
-                  </Link>
-                )
-              })}
+                        </>
+                      )
+
+                      return (
+                        <Link
+                          key={c.id}
+                          to={`/admin/clients/${c.id}`}
+                          state={{ fromList: true, isOtherStore: otherStore, anonIndex: otherStore ? anonIndex : undefined }}
+                          onClick={handleRowClick}
+                          className={`group block border-b border-gray-100 last:border-b-0 transition-colors hover:bg-blue-50/70 ${idx % 2 === 1 ? 'bg-gray-50/60' : 'bg-white'} ${isInactive ? 'opacity-60' : ''}`}
+                        >
+                          {/* ── スマートフォン表示（2〜3段） ── */}
+                          <div className="md:hidden px-4 py-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-baseline gap-2 min-w-0">
+                                {numberLabel && <span className="text-sm font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
+                                {nameLabel && (
+                                  <span className="text-[19px] font-normal text-gray-900 truncate flex items-center gap-1">
+                                    {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
+                                    <span className="truncate">{nameLabel}</span>
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-gray-300 text-lg flex-shrink-0">›</span>
+                            </div>
+                            {displaySub && <p className="text-xs text-gray-400 mt-0.5 truncate">{displaySub}</p>}
+                            {(firstKg != null || latestKg != null || totalDiff !== null) && (
+                              <div className="flex items-center gap-3 text-sm text-gray-700 mt-1.5 flex-wrap">
+                                {firstKg  != null && <span>開始 <span className="text-[18px] font-semibold text-gray-900">{firstKg}kg</span></span>}
+                                {latestKg != null && <span>最新 <span className="text-[18px] font-semibold text-gray-900">{latestKg}kg</span></span>}
+                                {totalDiff !== null && (
+                                  <span>
+                                    差{' '}
+                                    <span className={`text-[18px] font-normal ${totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                                      {totalDiff >= 0 ? '+' : ''}{totalDiff}kg
+                                    </span>
+                                  </span>
+                                )}
+                                {toGoalNode && <span className="text-xs text-gray-400">目標まで {toGoalNode}</span>}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              {statusBadges}
+                              {subBadges}
+                            </div>
+                          </div>
+
+                          {/* ── PC表示（表形式） ── */}
+                          <div className="hidden md:grid grid-cols-[2fr_0.85fr_0.85fr_0.85fr_1.5fr_20px] items-center gap-x-4 px-5 min-h-[78px]">
+                            <div className="min-w-0 flex items-baseline gap-2.5">
+                              {numberLabel && <span className="text-[15px] font-semibold text-gray-400 flex-shrink-0">{numberLabel}</span>}
+                              <div className="min-w-0">
+                                {nameLabel && (
+                                  <p className="text-[20px] font-normal text-gray-900 truncate flex items-center gap-1.5">
+                                    {!otherStore && !isInactive && <span className="text-red-500 text-xs flex-shrink-0">●</span>}
+                                    {nameLabel}
+                                  </p>
+                                )}
+                                {displaySub && <p className="text-xs text-gray-400 truncate">{displaySub}</p>}
+                              </div>
+                            </div>
+                            <div className="text-right text-[20px] font-medium text-gray-900">
+                              {firstKg != null ? `${firstKg}kg` : <span className="text-gray-300 font-normal">—</span>}
+                            </div>
+                            <div className="text-right text-[20px] font-medium text-gray-900">
+                              {latestKg != null ? `${latestKg}kg` : <span className="text-gray-300 font-normal">—</span>}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[20px] font-normal">
+                                {totalDiff !== null
+                                  ? <span className={totalDiff < 0 ? 'text-red-500' : totalDiff > 0 ? 'text-gray-900' : 'text-gray-500'}>{totalDiff >= 0 ? '+' : ''}{totalDiff}kg</span>
+                                  : <span className="text-gray-300 font-normal">—</span>}
+                              </p>
+                              {toGoalNode && <p className="text-[11px] text-gray-400 mt-0.5 whitespace-nowrap">目標まで {toGoalNode}</p>}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end">{statusBadges}</div>
+                              {(isInactive || (!otherStore && commCnt > 0)) && (
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">{subBadges}</div>
+                              )}
+                            </div>
+                            <div className="text-right text-gray-300 text-lg group-hover:text-blue-400 transition-colors">›</div>
+                          </div>
+                        </Link>
+                      )
+                    })
+                  })()}
+                </>
+              )}
             </div>
           </>
         )}

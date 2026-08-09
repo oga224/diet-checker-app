@@ -13,7 +13,6 @@ import { ja } from 'date-fns/locale'
 import { supabase }     from '../../lib/supabase'
 import ClientForm       from '../../components/admin/ClientForm'
 import BodyPhotoSection from '../../components/admin/BodyPhotoSection'
-import MealPhotoSection from '../../components/admin/MealPhotoSection'
 import MonthlyTable     from '../../components/admin/MonthlyTable'
 import CommentSection, { useClientCommentCount } from '../../components/admin/CommentSection'
 import EvaluationCard   from '../../components/EvaluationCard'
@@ -21,6 +20,9 @@ import { useAuth }               from '../../contexts/AuthContext'
 import AdminRecordEditModal      from '../../components/admin/AdminRecordEditModal'
 import DailyMealPhotos           from '../../components/admin/DailyMealPhotos'
 import { birthdateToPassword }   from '../../lib/patientAuth'
+import {
+  fetchOtherStoreClient, fetchOtherStoreWeightLogs, fetchOtherStoreMealLogs, anonClientLabel,
+} from '../../lib/otherStoreApi'
 
 const LOGIN_URL = typeof window !== 'undefined' ? `${window.location.origin}/login` : ''
 
@@ -89,11 +91,23 @@ export default function ClientDetailPage() {
   // 表示箇所は必ずこの1つの値だけで判定する。
   const shouldHidePersonalInfo = isRestricted || nameHidden
 
-  async function fetchData() {
+  // 一覧からの遷移時に渡される、他店舗顧客の画面内連番（DBには保存しない・表示専用）
+  const anonIndexFromState = location.state?.anonIndex ?? null
+  const otherStoreAnonLabel = anonClientLabel(anonIndexFromState)
+
+  // today's/logs/meal のセット処理（直接取得・RPC取得のどちらからでも共通で使う）
+  function applyClientData(clientRow, weightRows, mealRows) {
+    setClient(clientRow)
+    setLogs(weightRows ?? [])
+    const mm = {}
+    ;(mealRows ?? []).forEach((m) => { mm[m.date] = m })
+    setMealLogMap(mm)
+  }
+
+  // super_admin：既存どおり無条件の直接取得（店舗を問わず全件アクセス可能）
+  async function fetchDirectUnscoped() {
     const [clientRes, logsRes, mealRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', id).single(),
-      // 全件をページ送りして取得（Supabase/PostgRESTの1000件上限による打ち切りを防ぐ。
-      // 一覧側の取得と同じ仕組み。長期利用の顧客ほど記録数が増え、上限に達しうる）
       fetchAllPages((from, to) =>
         supabase.from('weight_logs').select('*').eq('client_id', id)
           .order('date', { ascending: true })
@@ -110,21 +124,154 @@ export default function ClientDetailPage() {
       console.error('[ClientDetailPage] weight_logs fetch error:', logsRes.error)
       setError(`体重記録の取得に失敗しました：${logsRes.error.message}`)
     } else {
-      setClient(clientRes.data)
-      setLogs(logsRes.data ?? [])
-      const mm = {}
-      ;(mealRes.data ?? []).forEach((m) => { mm[m.date] = m })
-      setMealLogMap(mm)
+      applyClientData(clientRes.data, logsRes.data, mealRes.data)
     }
     setLoading(false)
 
-    // 患者ログインアカウントの有無を確認
     const { count } = await supabase
       .from('profiles')
       .select('id', { count: 'exact', head: true })
       .eq('client_id', id)
       .eq('role', 'client')
     setHasPatientAccount((count ?? 0) > 0)
+  }
+
+  // 通常admin・自店舗：clients を自店舗のstore_idへ明示的に絞った直接取得。
+  // このクエリ自体が他店舗の行を返せないため、RLSの状態に関わらず安全。
+  async function fetchDirectOwnScoped() {
+    if (!profile?.store_id) {
+      setError('お客さんが見つかりません')
+      setLoading(false)
+      return
+    }
+    const [clientRes, logsRes, mealRes] = await Promise.all([
+      supabase.from('clients').select('*').eq('id', id).eq('store_id', profile.store_id).single(),
+      fetchAllPages((from, to) =>
+        supabase.from('weight_logs').select('*').eq('client_id', id)
+          .order('date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      ),
+      supabase.from('meal_logs')
+        .select('date, breakfast_photo_url, lunch_photo_url, dinner_photo_url, snack_photo_url')
+        .eq('client_id', id),
+    ])
+    if (clientRes.error) {
+      setError('お客さんが見つかりません')
+    } else if (logsRes.error) {
+      console.error('[ClientDetailPage] weight_logs fetch error:', logsRes.error)
+      setError(`体重記録の取得に失敗しました：${logsRes.error.message}`)
+    } else {
+      applyClientData(clientRes.data, logsRes.data, mealRes.data)
+    }
+    setLoading(false)
+
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', id)
+      .eq('role', 'client')
+    setHasPatientAccount((count ?? 0) > 0)
+  }
+
+  // 通常admin・他店舗：匿名化RPC経由でのみ取得する（clients/weight_logs/meal_logsへの直接アクセスなし）。
+  // いずれかのRPCが失敗した場合は「0件」として扱わず、取得失敗として停止する
+  // （直接取得へのフォールバックは行わない）。
+  async function fetchViaOtherStoreRpc(prefetchedClientRow) {
+    const [clientRes, weightRes, mealRes] = await Promise.all([
+      prefetchedClientRow ? Promise.resolve({ data: prefetchedClientRow, error: null }) : fetchOtherStoreClient(id),
+      fetchOtherStoreWeightLogs(id),
+      fetchOtherStoreMealLogs(id),
+    ])
+    if (clientRes.error || !clientRes.data) {
+      if (clientRes.error) console.error('[ClientDetailPage] other-store client RPC error:', clientRes.error)
+      setError('お客さんが見つかりません')
+      setLoading(false)
+      return
+    }
+    if (weightRes.error) {
+      console.error('[ClientDetailPage] other-store weight_logs fetch error:', weightRes.error)
+      setError('体重記録の取得に失敗しました')
+      setLoading(false)
+      return
+    }
+    if (mealRes.error) {
+      console.error('[ClientDetailPage] other-store meal_logs fetch error:', mealRes.error)
+      setError('食事写真の取得に失敗しました')
+      setLoading(false)
+      return
+    }
+    applyClientData(clientRes.data, weightRes.data, mealRes.data)
+    // 他店舗は閲覧専用（患者ログイン情報セクション自体を非表示にするため確認不要）
+    setHasPatientAccount(null)
+    setLoading(false)
+  }
+
+  // 通常admin・location.stateが無い場合（詳細画面のリロード・URL直接アクセスなど）の安全な判定。
+  // location.state はセキュリティ境界として信用しないため、必ず自分自身で
+  // 「id + 自店舗store_idの両方をクエリ自体に含めた自店舗限定確認 → 他店舗匿名化RPC」の順に判定する。
+  // 取得後にJavaScript側だけでstore_idを比較する方法は使わない（RLSが無効でも他店舗行を取得できない構造にする）。
+  async function resolveOwnerAndFetch() {
+    if (!profile?.store_id) {
+      // store_id未設定の通常adminは、自店舗判定ができないため全顧客取得へは進ませない
+      setError('お客さんが見つかりません')
+      setLoading(false)
+      return
+    }
+
+    const ownCheck = await supabase
+      .from('clients')
+      .select('id')
+      .eq('id', id)
+      .eq('store_id', profile.store_id)
+      .maybeSingle()
+
+    if (ownCheck.error) {
+      console.error('[ClientDetailPage] own-store existence check error:', ownCheck.error)
+      setError('お客さん情報の確認に失敗しました')
+      setLoading(false)
+      return
+    }
+
+    if (ownCheck.data) {
+      // 自店舗の顧客であることを確認済み → 既存の自店舗直接取得へ進む
+      await fetchDirectOwnScoped()
+      return
+    }
+
+    // 自店舗の顧客ではない → 他店舗匿名化RPCでのみ判定する（直接取得へは進まない）
+    const probe = await fetchOtherStoreClient(id)
+    if (probe.error || !probe.data) {
+      if (probe.error) console.error('[ClientDetailPage] other-store client RPC error:', probe.error)
+      setError('お客さんが見つかりません')
+      setLoading(false)
+      return
+    }
+    await fetchViaOtherStoreRpc(probe.data)
+  }
+
+  async function fetchData() {
+    setError(null)
+
+    if (isSuperAdmin) {
+      await fetchDirectUnscoped()
+      return
+    }
+
+    // location.state はナビゲーション時の参考情報にすぎず、セキュリティ境界としては信用しない。
+    // isOtherStore===true でも実際のアクセス制御はRPC内部（SECURITY DEFINER）が行うため、
+    // ここで信用して経路を切り替えても安全性は損なわれない。
+    const stateHint = location.state?.isOtherStore
+    if (stateHint === true) {
+      await fetchViaOtherStoreRpc(null)
+      return
+    }
+    if (stateHint === false) {
+      await fetchDirectOwnScoped()
+      return
+    }
+
+    await resolveOwnerAndFetch()
   }
 
   useEffect(() => { fetchData() }, [id])
@@ -238,6 +385,7 @@ export default function ClientDetailPage() {
   )
 
   // ── 顧客番号（DB の customer_number を使用、未設定時は短縮ID）──
+  // ※他店舗閲覧（isOtherStore）ではこの値を一切表示しない（otherStoreAnonLabel を使う）
   const clientCode = client?.customer_number || `ID-${id.slice(0, 6).toUpperCase()}`
 
   // ── 集計値 ─────────────────────────────────────────────────
@@ -266,7 +414,7 @@ export default function ClientDetailPage() {
   // ログイン状態
   const loginStatus = hasPatientAccount === null ? null : hasPatientAccount ? 'issued' : 'unissued'
 
-  // 満年齢を生年月日から計算
+  // 満年齢を生年月日から計算（自店舗・super_admin用。他店舗はRPCが返す age をそのまま使う）
   function calcAge(birthdateStr) {
     if (!birthdateStr) return null
     const birth = new Date(birthdateStr)
@@ -276,7 +424,7 @@ export default function ClientDetailPage() {
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
     return age
   }
-  const displayAge = calcAge(client.birthdate)
+  const displayAge = isOtherStore ? (client.age ?? null) : calcAge(client.birthdate)
 
   // 編集フォーム初期値
   const editInitial = {
@@ -419,10 +567,17 @@ export default function ClientDetailPage() {
         <div className="flex items-center gap-3">
           <BackButton onClick={handleBack} label="一覧へ" variant="dark" />
           <div>
-            {shouldHidePersonalInfo ? (
+            {isOtherStore ? (
               <>
-                <p className={`text-xs font-medium ${isRestricted ? 'text-orange-600' : 'text-gray-400'}`}>
-                  {isOtherStore ? '他店舗顧客' : isRestricted ? '匿名モード（本部）' : '氏名非表示モード中'}
+                <p className="text-xs font-medium text-orange-600">
+                  他店舗顧客{client?.store_name ? `（${client.store_name}）` : ''}
+                </p>
+                <h1 className="text-[21px] font-bold text-gray-800">{otherStoreAnonLabel}</h1>
+              </>
+            ) : shouldHidePersonalInfo ? (
+              <>
+                <p className="text-xs font-medium text-gray-400">
+                  {isRestricted ? '匿名モード（本部）' : '氏名非表示モード中'}
                 </p>
                 <h1 className="text-[21px] font-bold text-gray-800">顧客番号：{clientCode}</h1>
               </>
@@ -532,13 +687,15 @@ export default function ClientDetailPage() {
           {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <p className="text-[15px] text-gray-400">{shouldHidePersonalInfo ? '顧客番号' : '氏名'}</p>
-              {shouldHidePersonalInfo
-                ? <p className="text-[19px] font-semibold text-gray-900">{clientCode}</p>
-                : <>
-                    <p className="text-[19px] font-semibold text-gray-900">{client.name}</p>
-                    {client.kana && <p className="text-[15px] text-gray-400">{client.kana}</p>}
-                  </>
+              <p className="text-[15px] text-gray-400">{isOtherStore ? '表示名' : shouldHidePersonalInfo ? '顧客番号' : '氏名'}</p>
+              {isOtherStore
+                ? <p className="text-[19px] font-semibold text-gray-900">{otherStoreAnonLabel}</p>
+                : shouldHidePersonalInfo
+                  ? <p className="text-[19px] font-semibold text-gray-900">{clientCode}</p>
+                  : <>
+                      <p className="text-[19px] font-semibold text-gray-900">{client.name}</p>
+                      {client.kana && <p className="text-[15px] text-gray-400">{client.kana}</p>}
+                    </>
               }
             </div>
             {displayAge !== null && (
@@ -559,7 +716,8 @@ export default function ClientDetailPage() {
                 <p className="text-[19px] font-medium text-gray-800">{client.goal_weight} kg</p>
               </div>
             )}
-            {/* 生年月日：氏名非表示モード／他店舗閲覧／本部匿名モードのいずれでも値を「非表示」に統一 */}
+            {/* 生年月日：氏名非表示モード／他店舗閲覧／本部匿名モードのいずれでも値を「非表示」に統一
+                （他店舗閲覧ではRPCが生年月日自体を返さないため、この行はそもそも表示されない） */}
             {client.birthdate && (
               <div>
                 <p className="text-[15px] text-gray-400">生年月日</p>
@@ -802,6 +960,7 @@ export default function ClientDetailPage() {
         ══════════════════════════════════════════════ */}
         <MonthlyTable
           clientId={id}
+          isOtherStore={isOtherStore}
           refreshKey={refreshKey}
           selectedDate={selectedPhotoDate}
           onDateClick={(date) => {
@@ -816,6 +975,8 @@ export default function ClientDetailPage() {
               date={selectedPhotoDate}
               sectionRef={mealPhotoRef}
               showToast={showToast}
+              isOtherStore={isOtherStore}
+              prefetchedMealLog={mealLogMap[selectedPhotoDate] ?? null}
             />
           }
         />

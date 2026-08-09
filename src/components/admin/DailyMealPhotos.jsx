@@ -39,7 +39,9 @@ function Lightbox({ url, label, onClose }) {
  *   sectionRef - 親からスクロール用に渡される ref
  *   showToast  - (type, msg) => void  トースト表示（省略可）
  */
-export default function DailyMealPhotos({ clientId, date, sectionRef, showToast }) {
+export default function DailyMealPhotos({
+  clientId, date, sectionRef, showToast, isOtherStore = false, prefetchedMealLog = null,
+}) {
   const [mealLog,   setMealLog]   = useState(null)
   const [weightLog, setWeightLog] = useState(null)
   const [loading,   setLoading]   = useState(true)
@@ -47,6 +49,14 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
   const [mode,      setMode]      = useState('view') // 'view' | 'upload'
 
   useEffect(() => {
+    if (isOtherStore) {
+      // 他店舗：直接取得を行わず、親（ClientDetailPage）が匿名化RPCで取得済みの
+      // meal_logs データのみを使う。weight_logs.comment（本文）は他店舗では扱わない。
+      setMealLog(prefetchedMealLog)
+      setWeightLog(null)
+      setLoading(false)
+      return
+    }
     if (!date) return
     setLoading(true)
     async function fetchDay() {
@@ -62,7 +72,7 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
       setLoading(false)
     }
     fetchDay()
-  }, [clientId, date])
+  }, [clientId, date, isOtherStore, prefetchedMealLog])
 
   // 写真アップロード → meal_logs に即時 upsert
   async function handlePhotoUploaded(urlKey, url) {
@@ -127,25 +137,27 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
           <span className="text-xs text-gray-400 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full hidden sm:inline">
             月間表の日付クリックで切り替え
           </span>
-          {/* 閲覧 / アップロード 切替 */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-            {[
-              { id: 'view',   label: '閲覧' },
-              { id: 'upload', label: '管理者アップロード' },
-            ].map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setMode(id)}
-                className={`px-3 py-1.5 transition-colors
-                  ${mode === id
-                    ? 'bg-blue-600 text-white font-medium'
-                    : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* 閲覧 / アップロード 切替（他店舗閲覧では非表示：閲覧専用のため） */}
+          {!isOtherStore && (
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+              {[
+                { id: 'view',   label: '閲覧' },
+                { id: 'upload', label: '管理者アップロード' },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMode(id)}
+                  className={`px-3 py-1.5 transition-colors
+                    ${mode === id
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -153,7 +165,7 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
         </div>
-      ) : mode === 'upload' ? (
+      ) : mode === 'upload' && !isOtherStore ? (
         /* ── アップロードモード ─────────────────────────────── */
         <div className="space-y-3">
           <p className="text-xs text-blue-600 font-medium bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
@@ -206,8 +218,8 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
             })}
           </div>
 
-          {/* コメント */}
-          {weightLog?.comment ? (
+          {/* コメント：他店舗ではコメント本文を取得・表示しない */}
+          {!isOtherStore && weightLog?.comment ? (
             <div className="bg-gray-50 rounded-xl px-4 py-3">
               <p className="text-[14px] text-gray-400 mb-1 font-medium">💬 コメント</p>
               <p className="text-[17px] text-gray-700 leading-relaxed">{weightLog.comment}</p>
@@ -215,13 +227,15 @@ export default function DailyMealPhotos({ clientId, date, sectionRef, showToast 
           ) : !hasAnyPhoto ? (
             <p className="text-center text-sm text-gray-400 py-4">
               この日の食事写真はありません
-              <button
-                type="button"
-                onClick={() => setMode('upload')}
-                className="ml-2 text-blue-500 underline hover:text-blue-700"
-              >
-                追加する
-              </button>
+              {!isOtherStore && (
+                <button
+                  type="button"
+                  onClick={() => setMode('upload')}
+                  className="ml-2 text-blue-500 underline hover:text-blue-700"
+                >
+                  追加する
+                </button>
+              )}
             </p>
           ) : null}
         </div>

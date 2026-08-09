@@ -3,6 +3,7 @@ import { getDaysInMonth, format, parseISO } from 'date-fns'
 import { supabase }       from '../../lib/supabase'
 import { evaluateLog }    from '../../lib/evaluateLog'
 import { fetchAllPages }  from '../../lib/fetchAllPages'
+import { fetchOtherStoreWeightLogs, fetchOtherStoreMealLogs } from '../../lib/otherStoreApi'
 
 // ── ヘルパー ─────────────────────────────────────────────────
 function addMonth(y, m, delta) {
@@ -158,7 +159,9 @@ const ROWS_MEAL = [
   },
   {
     key: 'comment', label: 'メモ',
-    cell: (w) => w?.comment ? { v: '○', c: 'text-blue-600' } : { v: '', c: '' },
+    // 他店舗（RPC取得）は本文を返さず has_comment のみを返すため、それを優先して判定する。
+    // 自店舗（直接取得）は既存どおり comment の有無で判定する。
+    cell: (w) => (w?.has_comment ?? Boolean(w?.comment)) ? { v: '○', c: 'text-blue-600' } : { v: '', c: '' },
   },
   {
     key: 'score', label: 'スコア',
@@ -263,7 +266,7 @@ function Table({ rows, allDays, wMap, mMap, todayStr, selectedDate, scrollRef, o
 }
 
 // ── メインコンポーネント ──────────────────────────────────────
-export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, selectedDate, renderBetween }) {
+export default function MonthlyTable({ clientId, isOtherStore = false, onDateClick, refreshKey = 0, selectedDate, renderBetween }) {
   const now = new Date()
   // ナビゲーション用（← → ボタンで制御するフォーカス月）
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -273,6 +276,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
   const [wMap, setWMap] = useState({})
   const [mMap, setMMap] = useState({})
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false) // 他店舗RPCが失敗した場合のみtrue（0件とは区別する）
 
   const scrollRef1   = useRef(null)
   const scrollRef2   = useRef(null)
@@ -292,6 +296,48 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
   useEffect(() => {
     initialScroll.current = false
     setLoading(true)
+    setFetchError(false)
+
+    // 他店舗：匿名化RPC経由のみ（clients/weight_logs/meal_logsへの直接アクセスはしない）。
+    // RPCは常に全期間を返すため、開始月は取得結果そのものから求める（最古日付取得の別クエリは不要）。
+    // いずれかのRPCが失敗した場合は「記録0件」として扱わず、取得失敗として表示する
+    // （直接取得へのフォールバックは行わない）。
+    async function initOtherStore() {
+      const [wRes, mRes] = await Promise.all([
+        fetchOtherStoreWeightLogs(clientId),
+        fetchOtherStoreMealLogs(clientId),
+      ])
+      if (wRes.error || mRes.error) {
+        if (wRes.error) console.error('[MonthlyTable] other-store weight_logs fetch error:', wRes.error)
+        if (mRes.error) console.error('[MonthlyTable] other-store meal_logs fetch error:', mRes.error)
+        setFetchError(true)
+        setLoading(false)
+        return
+      }
+      const wRows = wRes.data ?? []
+      const mRows = mRes.data ?? []
+
+      let startY, startM
+      if (wRows.length > 0) {
+        const oldestDate = wRows.reduce((min, l) => (l.date < min ? l.date : min), wRows[0].date)
+        const d = parseISO(oldestDate)
+        startY = d.getFullYear()
+        startM = d.getMonth() + 1
+      } else {
+        // 記録なし → 3ヶ月前から
+        const fallback = addMonth(now.getFullYear(), now.getMonth() + 1, -2)
+        startY = fallback.year; startM = fallback.month
+      }
+      // 終了月 = 翌月（今日基準）
+      const endNext = addMonth(now.getFullYear(), now.getMonth() + 1, 1)
+      const endY = endNext.year, endM = endNext.month
+      setDateRange({ startY, startM, endY, endM })
+
+      const wm = {}; wRows.forEach(l => { wm[l.date] = l })
+      const mm = {}; mRows.forEach(l => { mm[l.date] = l })
+      setWMap(wm); setMMap(mm)
+      setLoading(false)
+    }
 
     async function init() {
       // 最古の weight_log 日付を取得
@@ -348,8 +394,12 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
       setLoading(false)
     }
 
-    init()
-  }, [clientId, refreshKey])
+    if (isOtherStore) {
+      initOtherStore()
+    } else {
+      init()
+    }
+  }, [clientId, refreshKey, isOtherStore])
 
   // ── 初回ロード後：今日の列へ自動スクロール ──────────────────
   useEffect(() => {
@@ -453,6 +503,13 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
     </div>
   )
 
+  // RPC取得失敗時：0件と誤認されないよう、空のテーブルではなく明示的なエラーを表示する
+  const ErrorBlock = (
+    <div className="text-center py-8 text-sm text-red-500">
+      記録の取得に失敗しました。時間をおいて再度お試しください。
+    </div>
+  )
+
   const rangeLabel = dateRange
     ? `${dateRange.startY}年${dateRange.startM}月〜${dateRange.endY}年${dateRange.endM}月`
     : ''
@@ -471,7 +528,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
             </p>
           </div>
         </div>
-        {loading ? Spinner : (
+        {loading ? Spinner : fetchError ? ErrorBlock : (
           <>
             <Table rows={ROWS_HEALTH} allDays={allDays} wMap={wMap} mMap={mMap}
               todayStr={todayStr} selectedDate={selectedDate}
@@ -492,7 +549,7 @@ export default function MonthlyTable({ clientId, onDateClick, refreshKey = 0, se
         <div className="bg-gray-50 border-b border-gray-200 px-5 py-3">
           <h2 className="text-[17px] font-semibold text-gray-600">表2：食事・記録状況</h2>
         </div>
-        {loading ? Spinner : (
+        {loading ? Spinner : fetchError ? ErrorBlock : (
           <>
             <Table rows={ROWS_MEAL} allDays={allDays} wMap={wMap} mMap={mMap}
               todayStr={todayStr} selectedDate={selectedDate}
