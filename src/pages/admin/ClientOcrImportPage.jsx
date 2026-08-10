@@ -1,8 +1,9 @@
-import { useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { FunctionsHttpError, FunctionsRelayError, FunctionsFetchError } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import BackButton from '../../components/BackButton'
+import { useAuth } from '../../contexts/AuthContext'
 
 // ── 共通定数（Function側 supabase/functions/ocr-to-csv/index.ts と同じ値）────
 const MAX_IMAGES = 10
@@ -132,6 +133,8 @@ export default function ClientOcrImportPage() {
   const navigate = useNavigate()
   const dropRef  = useRef(null)
   const fileRef  = useRef(null)
+  const { profile } = useAuth()
+  const isSuperAdmin = profile?.is_super_admin === true
 
   const [step,       setStep]       = useState(0)  // 0=upload 1=ocring 2=preview 3=done
   const [images,     setImages]     = useState([]) // { file, previewUrl }[]
@@ -140,9 +143,57 @@ export default function ClientOcrImportPage() {
   const [importing,  setImporting]  = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [authStatus,   setAuthStatus]   = useState('checking') // 'checking' | 'authorized' | 'denied'
+  const [authorizedClientId, setAuthorizedClientId] = useState(null)
+
+  // URLのidが変わるたびに、自店舗の顧客であることを確認してから使用する。
+  // 通常adminはid＋store_idを同一クエリで確認し、確認済みのIDだけを以降のデータ処理へ渡す。
+  useEffect(() => {
+    let cancelled = false
+
+    setAuthStatus('checking')
+    setAuthorizedClientId(null)
+    setStep(0)
+    setImages(prev => { prev.forEach(img => URL.revokeObjectURL(img.previewUrl)); return [] })
+    setRows([])
+    setOcrError(null)
+    setImporting(false)
+    setImportResult(null)
+    setIsDragging(false)
+
+    async function checkAccess() {
+      if (!isSuperAdmin && !profile?.store_id) {
+        if (!cancelled) setAuthStatus('denied')
+        return
+      }
+
+      const base = supabase.from('clients').select('id').eq('id', id)
+      const { data, error } = isSuperAdmin
+        ? await base.maybeSingle()
+        : await base.eq('store_id', profile.store_id).maybeSingle()
+
+      if (cancelled) return
+
+      if (error) {
+        console.error('[ClientOcrImportPage] client check error:', error)
+        setAuthStatus('denied')
+        return
+      }
+      if (!data) {
+        setAuthStatus('denied')
+        return
+      }
+      setAuthorizedClientId(data.id)
+      setAuthStatus('authorized')
+    }
+
+    checkAccess()
+    return () => { cancelled = true }
+  }, [id, isSuperAdmin, profile?.store_id])
 
   // ── 画像追加 ──────────────────────────────────────────────
   function addImages(files) {
+    if (authStatus !== 'authorized' || !authorizedClientId) return
     const incoming = Array.from(files)
     const errors = []
     const accepted = []
@@ -224,6 +275,7 @@ export default function ClientOcrImportPage() {
 
   // ── OCR実行 ───────────────────────────────────────────────
   async function handleOcr() {
+    if (authStatus !== 'authorized' || !authorizedClientId) return
     if (!images.length) return
     setStep(1); setOcrError(null)
     try {
@@ -307,11 +359,12 @@ export default function ClientOcrImportPage() {
 
   // ── インポート実行 ────────────────────────────────────────
   async function handleImport() {
+    if (authStatus !== 'authorized' || !authorizedClientId) return
     const validRows = rows.filter(r => r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date))
     if (!validRows.length) return
     setImporting(true)
     try {
-      const records = validRows.map(r => rowToWeightLog(r, id))
+      const records = validRows.map(r => rowToWeightLog(r, authorizedClientId))
       const CHUNK = 100
       let imported = 0
       for (let i = 0; i < records.length; i += CHUNK) {
@@ -319,13 +372,17 @@ export default function ClientOcrImportPage() {
         const { error } = await supabase
           .from('weight_logs')
           .upsert(chunk, { onConflict: 'client_id,date' })
-        if (error) throw error
+        if (error) {
+          console.error('[ClientOcrImportPage] upsertエラー:', error)
+          throw new Error('データの保存に失敗しました。時間をおいて再度お試しください。')
+        }
         imported += chunk.length
       }
       setImportResult({ imported, total: validRows.length })
       setStep(3)
     } catch (err) {
-      setOcrError(`インポートエラー: ${err.message}`)
+      console.error('[ClientOcrImportPage] インポートエラー:', err)
+      setOcrError(err.message)
     } finally {
       setImporting(false)
     }
@@ -335,13 +392,40 @@ export default function ClientOcrImportPage() {
   function isValidDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v ?? '') }
 
   // ── レンダリング ──────────────────────────────────────────
+  if (authStatus === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (authStatus === 'denied') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-8 max-w-md w-full text-center space-y-4">
+          <div className="text-4xl">⚠️</div>
+          <h1 className="text-lg font-bold text-gray-700">この操作は利用できません</h1>
+          <p className="text-sm text-gray-500">対象のお客さんが見つからないか、操作の権限がありません。</p>
+          <button
+            type="button"
+            onClick={() => navigate('/admin/clients')}
+            className="mt-2 px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors text-sm"
+          >
+            顧客一覧に戻る
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
 
       {/* ヘッダー */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <BackButton to={`/admin/clients/${id}`} label="顧客詳細に戻る" variant="dark" />
+          <BackButton to={`/admin/clients/${authorizedClientId}`} label="顧客詳細に戻る" variant="dark" />
           <div>
             <h1 className="text-lg font-bold text-gray-800">🖼️ 画像からCSV作成・インポート</h1>
             <p className="text-xs text-gray-400">スクリーンショット → OCR解析 → プレビュー編集 → Supabase保存</p>
@@ -597,7 +681,7 @@ export default function ClientOcrImportPage() {
                 別の画像をインポート
               </button>
               <button
-                onClick={() => navigate(`/admin/clients/${id}`)}
+                onClick={() => navigate(`/admin/clients/${authorizedClientId}`)}
                 className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">
                 顧客詳細に戻る
               </button>

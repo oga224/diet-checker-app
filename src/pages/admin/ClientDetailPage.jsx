@@ -58,9 +58,12 @@ export default function ClientDetailPage() {
   const [issuingAccount, setIssuingAccount] = useState(false)
   const [issuedCredentials, setIssuedCredentials] = useState(null) // {login_id, password}
   const [showInitialPw, setShowInitialPw] = useState(false)
+  // admin_commentsの件数取得を許可してよい顧客ID。super_admin直接取得・自店舗直接取得が
+  // 正常に完了した場合だけ現在のidを設定する（他店舗RPC経路・権限確認中・エラー時はnullのまま）。
+  const [directCommentClientId, setDirectCommentClientId] = useState(null)
   const mealPhotoRef = useRef(null)
 
-  const clientCommentCount        = useClientCommentCount(id)
+  const clientCommentCount        = useClientCommentCount(id, directCommentClientId === id)
   const { signOut, profile }      = useAuth()
   const isSuperAdmin              = profile?.is_super_admin === true
   const [anonymousMode, setAnonymousMode] = useState(false)
@@ -125,6 +128,7 @@ export default function ClientDetailPage() {
       setError(`体重記録の取得に失敗しました：${logsRes.error.message}`)
     } else {
       applyClientData(clientRes.data, logsRes.data, mealRes.data)
+      setDirectCommentClientId(id)
     }
     setLoading(false)
 
@@ -163,6 +167,7 @@ export default function ClientDetailPage() {
       setError(`体重記録の取得に失敗しました：${logsRes.error.message}`)
     } else {
       applyClientData(clientRes.data, logsRes.data, mealRes.data)
+      setDirectCommentClientId(id)
     }
     setLoading(false)
 
@@ -252,6 +257,8 @@ export default function ClientDetailPage() {
 
   async function fetchData() {
     setError(null)
+    // 権限確認前・id変更直後は、admin_comments件数取得を必ず無効化する
+    setDirectCommentClientId(null)
 
     if (isSuperAdmin) {
       await fetchDirectUnscoped()

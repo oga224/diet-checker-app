@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import BackButton from '../../components/BackButton'
+import { useAuth } from '../../contexts/AuthContext'
 
 // ── CSV パース ──────────────────────────────────────────────────
 
@@ -50,12 +51,8 @@ function parseIntOrNull(v) {
  * 空欄 → null
  */
 function parseBoolOrNull(v) {
-  console.log('[parseBoolOrNull] input =', v, typeof v)
   const normalized = String(v ?? '').trim().toLowerCase()
-  console.log('[parseBoolOrNull] normalized =', normalized)
-  console.log('[parseBoolOrNull] chars =', [...normalized].map(c => c.charCodeAt(0).toString(16)))
   const trueList = ['true', '1', 'yes', '○', '◯', '〇', '有', 'あり']
-  console.log('[parseBoolOrNull] includes =', trueList.includes(normalized))
   if (!v || v.trim() === '') return null
   // ○ U+25CB  ◯ U+25EF  〇 U+3007 — 見た目が似ているが別文字
   if (trueList.includes(normalized)) return true
@@ -140,8 +137,8 @@ function transformRow(rowMap, rowNum) {
     morning_kg:        morningKg,
     evening_kg:        eveningKg,
     ...parseEatingOut(rowMap.eating_out),
-    menstruation:      (console.log('before parse menstruation', rowMap.period_day ?? rowMap.menstruation), parseBoolOrNull(rowMap.period_day ?? rowMap.menstruation)),
-    bowel_movement:    (console.log('before parse bowel_movement', rowMap.bowel_movement), parseBoolOrNull(rowMap.bowel_movement)),
+    menstruation:      parseBoolOrNull(rowMap.period_day ?? rowMap.menstruation),
+    bowel_movement:    parseBoolOrNull(rowMap.bowel_movement),
     water_ml:          waterMl,
     toilet_count:      toiletCnt,
     sleep_hours:       sleepHours,
@@ -169,14 +166,6 @@ function parseCSV(text) {
   const rawHeaders = parseCSVLine(lines[0])
   const headers = rawHeaders.map(normalizeHeader)
 
-  // [DEBUG] ヘッダー正規化結果
-  console.log('[CSV parse] ヘッダー原文:', rawHeaders)
-  console.log('[CSV parse] ヘッダー正規化後:', headers)
-  rawHeaders.forEach((h, i) => {
-    const codes = [...h].map(c => c.charCodeAt(0).toString(16).padStart(4,'0')).join(' ')
-    console.log(`  [${i}] "${h}" → "${headers[i]}"  (chars: ${codes})`)
-  })
-
   if (!headers.includes('date')) {
     return { rows: [], errors: [{ rowNum: 1, message: 'ヘッダー行に "date" 列が見つかりません' }] }
   }
@@ -192,20 +181,8 @@ function parseCSV(text) {
     const rowMap  = {}
     headers.forEach((h, idx) => { rowMap[h] = values[idx] ?? '' })
 
-    // [DEBUG] CSV読み取り後の生データ（1行目のみ詳細）
-    if (i === 1) {
-      console.log('[CSV parse] 行2 row keys:', Object.keys(rowMap))
-      console.log('[CSV parse] 行2 bowel raw:', JSON.stringify(rowMap.bowel_movement))
-      console.log('[CSV parse] 行2 period_day raw:', JSON.stringify(rowMap.period_day))
-      console.log('[CSV parse] 行2 menstruation raw:', JSON.stringify(rowMap.menstruation))
-      console.log('[CSV parse] 行2 full rowMap:', rowMap)
-    }
-    console.log(`[CSV parse] 行${i + 1} 生データ:`, rowMap)
-
     try {
       const record = transformRow(rowMap, i + 1)
-      // [DEBUG] transformRow後の変換済みデータ
-      console.log(`[CSV parse] 行${i + 1} 変換後:`, record)
       rows.push({ _rowNum: i + 1, _original: line, ...record })
     } catch (e) {
       errors.push({ rowNum: i + 1, message: e.message, original: line })
@@ -260,6 +237,8 @@ export default function ClientCsvImportPage() {
   const { id }   = useParams()
   const navigate = useNavigate()
   const fileRef  = useRef(null)
+  const { profile } = useAuth()
+  const isSuperAdmin = profile?.is_super_admin === true
 
   const [step,         setStep]         = useState(0)        // 0=upload 1=preview 2=done
   const [fileName,     setFileName]     = useState('')
@@ -269,15 +248,59 @@ export default function ClientCsvImportPage() {
   const [result,       setResult]       = useState(null)     // { imported, skipped, failed }
   const [parseError,   setParseError]   = useState(null)
   const [clientName,   setClientName]   = useState('')
+  const [authStatus,   setAuthStatus]   = useState('checking') // 'checking' | 'authorized' | 'denied'
+  const [authorizedClientId, setAuthorizedClientId] = useState(null)
 
-  // クライアント名を取得
-  useState(() => {
-    supabase.from('clients').select('name').eq('id', id).single()
-      .then(({ data }) => { if (data) setClientName(data.name) })
-  }, [id])
+  // URLのidが変わるたびに、自店舗の顧客であることを確認してから使用する。
+  // 通常adminはid＋store_idを同一クエリで確認し、確認済みのIDだけを以降のデータ処理へ渡す。
+  useEffect(() => {
+    let cancelled = false
+
+    setAuthStatus('checking')
+    setAuthorizedClientId(null)
+    setClientName('')
+    setStep(0)
+    setFileName('')
+    setParsed(null)
+    setConflictMode('overwrite')
+    setImporting(false)
+    setResult(null)
+    setParseError(null)
+
+    async function checkAccess() {
+      if (!isSuperAdmin && !profile?.store_id) {
+        if (!cancelled) setAuthStatus('denied')
+        return
+      }
+
+      const base = supabase.from('clients').select('id, name').eq('id', id)
+      const { data, error } = isSuperAdmin
+        ? await base.maybeSingle()
+        : await base.eq('store_id', profile.store_id).maybeSingle()
+
+      if (cancelled) return
+
+      if (error) {
+        console.error('[ClientCsvImportPage] client check error:', error)
+        setAuthStatus('denied')
+        return
+      }
+      if (!data) {
+        setAuthStatus('denied')
+        return
+      }
+      setAuthorizedClientId(data.id)
+      setClientName(data.name ?? '')
+      setAuthStatus('authorized')
+    }
+
+    checkAccess()
+    return () => { cancelled = true }
+  }, [id, isSuperAdmin, profile?.store_id])
 
   // ── ファイル選択 ─────────────────────────────────────────────
   function handleFile(file) {
+    if (authStatus !== 'authorized' || !authorizedClientId) return
     if (!file) return
     setParseError(null)
     const reader = new FileReader()
@@ -304,22 +327,13 @@ export default function ClientCsvImportPage() {
 
   // ── インポート実行 ─────────────────────────────────────────
   async function handleImport() {
-    console.log('★★★★★ SAVE START ★★★★★', { parsed_rows: parsed?.rows?.length })
+    if (authStatus !== 'authorized' || !authorizedClientId) return
     if (!parsed?.rows.length) return
     setImporting(true)
 
     const validRows = parsed.rows.map(r => {
       const { _rowNum, _original, ...record } = r
-      return { ...record, client_id: id }
-    })
-
-    // ── [DEBUG] 保存直前のデータを確認 ────────────────────────
-    console.log('[CSVインポート] ① transformRow後の全行データ:')
-    validRows.forEach((r, i) => {
-      console.log(`  行${i + 1} transform後:`,
-        'bowel_movement=', r.bowel_movement, typeof r.bowel_movement,
-        'menstruation=', r.menstruation, typeof r.menstruation,
-      )
+      return { ...record, client_id: authorizedClientId }
     })
 
     let imported = 0, skipped = 0, failed = 0
@@ -327,21 +341,27 @@ export default function ClientCsvImportPage() {
     try {
       if (conflictMode === 'skip') {
         const dates = validRows.map(r => r.date)
-        const { data: existing } = await supabase
+        const { data: existing, error: existingError } = await supabase
           .from('weight_logs')
           .select('date')
-          .eq('client_id', id)
+          .eq('client_id', authorizedClientId)
           .in('date', dates)
+
+        if (existingError) {
+          console.error('[CSVインポート] 既存日付確認エラー:', existingError)
+          throw new Error('既存データの確認に失敗したため、インポートを中止しました。時間をおいて再度お試しください。')
+        }
 
         const existingDates = new Set((existing ?? []).map(r => r.date))
         const newRows = validRows.filter(r => !existingDates.has(r.date))
         skipped = validRows.length - newRows.length
-        console.log('[CSVインポート] ② skipモード - 既存日付:', [...existingDates], '→ 新規挿入:', newRows.length, '件')
 
         if (newRows.length > 0) {
-          const { data: insData, error } = await supabase.from('weight_logs').insert(newRows).select()
-          console.log('[CSVインポート] ③ insert結果:', { insData, error })
-          if (error) throw error
+          const { error } = await supabase.from('weight_logs').insert(newRows)
+          if (error) {
+            console.error('[CSVインポート] insertエラー:', error)
+            throw new Error('データの保存に失敗しました。時間をおいて再度お試しください。')
+          }
           imported = newRows.length
         }
       } else {
@@ -349,35 +369,20 @@ export default function ClientCsvImportPage() {
         const CHUNK = 100
         for (let i = 0; i < validRows.length; i += CHUNK) {
           const chunk = validRows.slice(i, i + CHUNK)
-          console.log('★★★★★ UPSERT ★★★★★', chunk.map(x => ({ date: x.date, bowel_movement: x.bowel_movement, menstruation: x.menstruation })))
-          const { data: upsData, error } = await supabase
+          const { error } = await supabase
             .from('weight_logs')
             .upsert(chunk, { onConflict: 'client_id,date' })
-            .select()
-          console.log('★★★★★ UPSERT RESULT ★★★★★', error, upsData)
           if (error) {
-            // UNIQUE制約がない場合のわかりやすいエラーメッセージ
             if (error.message?.includes('unique') || error.message?.includes('constraint') || error.code === '42P10') {
-              throw new Error(
-                'DBにUNIQUE制約が設定されていません。\n' +
-                'Supabase SQL Editor で supabase_weight_logs_unique_fix.sql を実行してから再試行してください。\n\n' +
-                `詳細: ${error.message}`
-              )
+              console.error('[CSVインポート] UNIQUE制約エラー:', error)
+              throw new Error('データの保存設定に問題があるため、インポートできませんでした。管理者にお問い合わせください。')
             }
-            throw error
+            console.error('[CSVインポート] upsertエラー:', error)
+            throw new Error('データの保存に失敗しました。時間をおいて再度お試しください。')
           }
           imported += chunk.length
         }
       }
-
-      // ── [DEBUG] 保存後にDBから取得して確認 ──────────────────
-      const importedDates = validRows.map(r => r.date)
-      const { data: savedData } = await supabase
-        .from('weight_logs')
-        .select('date,morning_kg,menstruation,bowel_movement,water_ml')
-        .eq('client_id', id)
-        .in('date', importedDates)
-      console.log('[CSVインポート] ④ 保存後DBから取得:', savedData)
 
       setResult({ imported, skipped, failed })
       setStep(2)
@@ -391,12 +396,39 @@ export default function ClientCsvImportPage() {
   }
 
   // ── レンダリング ──────────────────────────────────────────────
+  if (authStatus === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (authStatus === 'denied') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-8 max-w-md w-full text-center space-y-4">
+          <div className="text-4xl">⚠️</div>
+          <h1 className="text-lg font-bold text-gray-700">この操作は利用できません</h1>
+          <p className="text-sm text-gray-500">対象のお客さんが見つからないか、操作の権限がありません。</p>
+          <button
+            type="button"
+            onClick={() => navigate('/admin/clients')}
+            className="mt-2 px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors text-sm"
+          >
+            顧客一覧に戻る
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ヘッダー */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <BackButton to={`/admin/clients/${id}`} label="顧客詳細に戻る" variant="dark" />
+          <BackButton to={`/admin/clients/${authorizedClientId}`} label="顧客詳細に戻る" variant="dark" />
           <div>
             <h1 className="text-lg font-bold text-gray-800">CSVインポート</h1>
             {clientName && <p className="text-xs text-gray-400">{clientName} さんのデータ一括登録</p>}
@@ -626,10 +658,6 @@ export default function ClientCsvImportPage() {
                 <div className="text-5xl">⚠️</div>
                 <h2 className="text-xl font-bold text-red-600">インポートに失敗しました</h2>
                 <p className="text-sm text-gray-500 bg-red-50 rounded-xl p-4 text-left">{result.errorMessage}</p>
-                <p className="text-xs text-gray-400">
-                  ※ weight_logsテーブルに (client_id, date) のUNIQUE制約が必要です。<br />
-                  Supabase SQL Editorで <code className="bg-gray-100 px-1 rounded">supabase_weight_logs_unique_fix.sql</code> を実行してください。
-                </p>
               </>
             ) : (
               <>
@@ -667,7 +695,7 @@ export default function ClientCsvImportPage() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate(`/admin/clients/${id}`)}
+                onClick={() => navigate(`/admin/clients/${authorizedClientId}`)}
                 className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700"
               >
                 顧客詳細に戻る

@@ -97,8 +97,19 @@ export default function CommentSection({ clientId, showToast, isRestricted = fal
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const textareaRef           = useRef(null)
+  // isRestricted切替中に完了した古いSELECTの結果を反映しないための取得世代カウンタ
+  const fetchGenRef           = useRef(0)
 
   async function fetchAll() {
+    const requestGen = ++fetchGenRef.current
+
+    if (isRestricted) {
+      setItems([])
+      setText('')
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     const [acRes, wlRes] = await Promise.all([
       // admin_comments（管理者↔お客さんのメッセージ）
@@ -112,6 +123,9 @@ export default function CommentSection({ clientId, showToast, isRestricted = fal
         .not('comment', 'is', null)
         .order('date', { ascending: false }),
     ])
+
+    // 取得中にisRestrictedへの切替やclientId変更で新しい取得が始まっていた場合は反映しない
+    if (fetchGenRef.current !== requestGen) return
 
     // admin_comments を変換
     const messages = (acRes.data ?? []).map((c) => ({
@@ -145,9 +159,20 @@ export default function CommentSection({ clientId, showToast, isRestricted = fal
     setLoading(false)
   }
 
-  useEffect(() => { fetchAll() }, [clientId])
+  useEffect(() => {
+    if (isRestricted) {
+      // 進行中の取得があれば無効化した上で、即座に表示中のデータを消す
+      fetchGenRef.current++
+      setItems([])
+      setText('')
+      setLoading(false)
+      return
+    }
+    fetchAll()
+  }, [clientId, isRestricted])
 
   async function handleEditMsg(rawId, newBody) {
+    if (isRestricted) return
     const { error } = await supabase.from('admin_comments')
       .update({ body: newBody })
       .eq('id', rawId)
@@ -163,6 +188,7 @@ export default function CommentSection({ clientId, showToast, isRestricted = fal
   }
 
   async function handleDeleteMsg(rawId) {
+    if (isRestricted) return
     const { error } = await supabase.from('admin_comments')
       .delete()
       .eq('id', rawId)
@@ -269,16 +295,28 @@ export default function CommentSection({ clientId, showToast, isRestricted = fal
   )
 }
 
-/** ヘッダーバッジ用：お客さんメッセージ件数を返す hook */
-export function useClientCommentCount(clientId) {
+/**
+ * ヘッダーバッジ用：お客さんメッセージ件数を返す hook。
+ * enabled===true かつ clientId がある場合だけ admin_comments を取得する
+ * （呼び出し側で「直接取得が確認済みの顧客か」を判定してから渡すことを前提とする）。
+ */
+export function useClientCommentCount(clientId, enabled = false) {
   const [count, setCount] = useState(0)
   useEffect(() => {
+    if (!enabled || !clientId) {
+      setCount(0)
+      return
+    }
+    let cancelled = false
     supabase
       .from('admin_comments')
       .select('id', { count: 'exact', head: true })
       .eq('client_id', clientId)
       .eq('sender', 'client')
-      .then(({ count: c }) => setCount(c ?? 0))
-  }, [clientId])
+      .then(({ count: c }) => {
+        if (!cancelled) setCount(c ?? 0)
+      })
+    return () => { cancelled = true }
+  }, [clientId, enabled])
   return count
 }
