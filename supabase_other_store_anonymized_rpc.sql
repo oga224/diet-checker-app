@@ -109,16 +109,46 @@ grant execute on function public.admin_get_other_store_client(uuid) to authentic
 -- ------------------------------------------------------------
 -- 2. admin_list_other_store_clients
 --    指定した他店舗の顧客一覧（一覧画面用、複数行）
+--    Phase 5B（一覧項目追加）で、顧客番号・体重サマリー・
+--    入力状況判定に必要な最小限の値を追加で返すよう拡張。
+--    氏名・かな・電話・住所・memo・契約情報・生年月日実値・
+--    コメント本文・admin_comments・body_photos・食事写真URLは返さない。
+--
+--    PostgreSQLは RETURNS TABLE の列構成が変わる関数を
+--    CREATE OR REPLACE だけでは変更できない（エラー：cannot change
+--    return type of existing function）。本ファイルは新規環境への
+--    初回適用を主目的とするが、旧い列構成（Phase 5B以前）が既に
+--    適用された環境へ再実行しても安全に置換できるよう、この関数だけ
+--    事前に DROP してから作成する（他の3関数はDROPしない）。
 -- ------------------------------------------------------------
-create or replace function public.admin_list_other_store_clients(p_store_id uuid)
+drop function if exists public.admin_list_other_store_clients(uuid);
+
+create function public.admin_list_other_store_clients(p_store_id uuid)
 returns table (
-  client_id   uuid,
-  store_id    uuid,
-  store_name  text,
-  age         integer,
-  height_cm   numeric,
-  goal_weight numeric,
-  is_active   boolean
+  client_id                    uuid,
+  store_id                     uuid,
+  store_name                   text,
+  customer_number              text,
+  age                          integer,
+  height_cm                    numeric,
+  goal_weight                  numeric,
+  is_active                    boolean,
+  start_weight                 numeric,
+  latest_weight                numeric,
+  last_log_date                date,
+  last_log_morning_kg          numeric,
+  last_log_evening_kg          numeric,
+  last_log_water_ml            integer,
+  last_log_toilet_count        integer,
+  last_log_sleep_hours         numeric,
+  last_log_bowel_movement      boolean,
+  last_log_ate_breakfast       boolean,
+  last_log_ate_lunch           boolean,
+  last_log_ate_dinner          boolean,
+  last_log_ate_snack           boolean,
+  last_log_breakfast_has_photo boolean,
+  last_log_lunch_has_photo     boolean,
+  last_log_dinner_has_photo    boolean
 )
 language plpgsql
 security definer
@@ -164,14 +194,66 @@ begin
     c.id,
     c.store_id,
     s.name,
+    c.customer_number,
     case when c.birthdate is null then null
          else date_part('year', age(current_date, c.birthdate))::integer
     end,
     c.height_cm,
     c.goal_weight,
-    coalesce(c.is_active, true)
+    coalesce(c.is_active, true),
+    sw.start_weight,
+    lw.latest_weight,
+    ll.last_log_date,
+    ll.morning_kg,
+    ll.evening_kg,
+    ll.water_ml,
+    ll.toilet_count,
+    ll.sleep_hours,
+    ll.bowel_movement,
+    ll.ate_breakfast,
+    ll.ate_lunch,
+    ll.ate_dinner,
+    ll.ate_snack,
+    (ml.breakfast_photo_url is not null),
+    (ml.lunch_photo_url is not null),
+    (ml.dinner_photo_url is not null)
   from public.clients c
   join public.stores s on s.id = c.store_id
+  -- 開始体重：有効な morning_kg を持つ最古の記録（同日は id 昇順）。
+  -- 一覧画面の computeWeightSummary と同じ定義。
+  left join lateral (
+    select w.morning_kg as start_weight
+    from public.weight_logs w
+    where w.client_id = c.id and w.morning_kg is not null
+    order by w.date asc, w.id asc
+    limit 1
+  ) sw on true
+  -- 最新体重：有効な morning_kg を持つ最新の記録（同日は id 降順）。
+  left join lateral (
+    select w.morning_kg as latest_weight
+    from public.weight_logs w
+    where w.client_id = c.id and w.morning_kg is not null
+    order by w.date desc, w.id desc
+    limit 1
+  ) lw on true
+  -- 直近の記録（体重の有無を問わない）：入力状況バッジ・スコア評価用。
+  -- 一覧画面の findLatestLog と同じ定義（同日は id 降順）。
+  left join lateral (
+    select w.date as last_log_date, w.morning_kg, w.evening_kg, w.water_ml,
+           w.toilet_count, w.sleep_hours, w.bowel_movement,
+           w.ate_breakfast, w.ate_lunch, w.ate_dinner, w.ate_snack
+    from public.weight_logs w
+    where w.client_id = c.id
+    order by w.date desc, w.id desc
+    limit 1
+  ) ll on true
+  -- 直近記録日の食事写真「有無」のみ（実URLは返さない）。
+  left join lateral (
+    select m.breakfast_photo_url, m.lunch_photo_url, m.dinner_photo_url
+    from public.meal_logs m
+    where m.client_id = c.id and m.date = ll.last_log_date
+    limit 1
+  ) ml on true
   where c.store_id = p_store_id
   order by c.id;
 end;

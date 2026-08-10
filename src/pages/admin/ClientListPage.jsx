@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import BackButton from '../../components/BackButton'
 import { format, differenceInDays, parseISO } from 'date-fns'
@@ -13,20 +13,21 @@ import {
 import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
 import { fetchAllPages } from '../../lib/fetchAllPages'
 import { computeWeightSummary, findLatestLog } from '../../lib/weightSummary'
-import { fetchOtherStoreClients, anonClientLabel } from '../../lib/otherStoreApi'
+import { fetchOtherStoreClients, anonClientLabel, buildOtherStoreWeightInfo } from '../../lib/otherStoreApi'
 
 const todayStr = format(new Date(), 'yyyy-MM-dd')
 
 // ── 入力状況バッジ ────────────────────────────────────────────
-function EntryBadge({ clientId, todayLogs, weightHistory }) {
-  if (todayLogs[clientId]) {
+// hasToday/hist は呼び出し側（自店舗・他店舗共通のresolveWeightInfo）で
+// 解決済みの値を渡す。自店舗・他店舗のどちらでも同じ判定・表示になる。
+function EntryBadge({ hasToday, hist }) {
+  if (hasToday) {
     return (
       <span className="text-xs font-medium bg-green-50 text-green-600 border border-green-200 px-2 py-0.5 rounded-full whitespace-nowrap">
         今日入力済み
       </span>
     )
   }
-  const hist = weightHistory[clientId]
   if (!hist?.lastDate) {
     return (
       <span className="text-xs font-medium bg-gray-100 text-gray-400 border border-gray-200 px-2 py-0.5 rounded-full">
@@ -51,9 +52,8 @@ function EntryBadge({ clientId, todayLogs, weightHistory }) {
 }
 
 // ── 日数（ソート用） ─────────────────────────────────────────
-function entryDays(clientId, todayLogs, weightHistory) {
-  if (todayLogs[clientId]) return -1
-  const hist = weightHistory[clientId]
+function entryDaysFromInfo(hasToday, hist) {
+  if (hasToday) return -1
   if (!hist?.lastDate) return 9999
   return differenceInDays(parseISO(todayStr), parseISO(hist.lastDate))
 }
@@ -62,6 +62,7 @@ export default function ClientListPage() {
   // ── useState を先に宣言（Reactのhooksルール）──
   const [clients,       setClients]       = useState([])  // 自店舗（super_adminは全店舗）を直接取得した顧客
   const [otherClients,  setOtherClients]  = useState([])  // 他店舗をRPC経由で取得した匿名化済み顧客
+  const [otherWeightHistory, setOtherWeightHistory] = useState({}) // 他店舗の体重サマリー・入力状況（client_id→buildOtherStoreWeightInfoの結果）
   const [todayLogs,     setTodayLogs]     = useState({})
   const [todayMeals,    setTodayMeals]    = useState({})
   const [weightHistory, setWeightHistory] = useState({})
@@ -83,6 +84,8 @@ export default function ClientListPage() {
   // データ取得の分岐（自店舗direct／他店舗RPC）に使うため、useState群の直後で呼ぶ
   const { signOut, profile } = useAuth()
   const isSuperAdmin = profile?.is_super_admin === true
+  // 他店舗RPC取得の世代カウンタ（店舗切替を連続実行した場合に、古い取得結果を反映しないため）
+  const otherFetchGenRef = useRef(0)
 
   function toggleNameHidden() {
     setNameHidden((prev) => {
@@ -243,11 +246,15 @@ export default function ClientListPage() {
   // 失敗を検知した場合は、成功した店舗分のみ表示しつつ、永続的なエラー表示で
   // 「一覧が不完全である可能性」を明示する（トーストのように自動で消える表示にはしない）。
   async function fetchOtherScopeData(storeIds) {
+    const myGen = ++otherFetchGenRef.current
     setOtherLoading(true)
     setOtherFetchError(null)
     try {
       const results = await Promise.all(storeIds.map((sid) => fetchOtherStoreClients(sid)))
+      // 取得中に店舗フィルターが変更され、新しい取得が始まっていた場合は結果を反映しない
+      if (otherFetchGenRef.current !== myGen) return
       const merged = []
+      const historyMap = {}
       let hadError = false
       results.forEach((r) => {
         if (r.error) {
@@ -255,15 +262,19 @@ export default function ClientListPage() {
           hadError = true
           return
         }
-        merged.push(...(r.data ?? []))
+        ;(r.data ?? []).forEach((row) => {
+          merged.push(row)
+          historyMap[row.client_id] = buildOtherStoreWeightInfo(row)
+        })
       })
       // 既存の画面ロジック（c.id 参照）と互換にするため client_id → id を付与する
       setOtherClients(merged.map((r) => ({ ...r, id: r.client_id })))
+      setOtherWeightHistory(historyMap)
       if (hadError) {
         setOtherFetchError('他店舗の顧客データの取得に失敗した店舗があります。表示されている他店舗の件数は不完全な可能性があります。')
       }
     } finally {
-      setOtherLoading(false)
+      if (otherFetchGenRef.current === myGen) setOtherLoading(false)
     }
   }
 
@@ -299,13 +310,23 @@ export default function ClientListPage() {
     if (isSuperAdmin) return
     if (!storeFilterReady) return
     if (selectedStoreId === (profile?.store_id || null)) {
+      otherFetchGenRef.current++ // 進行中の他店舗取得があれば無効化
       setOtherClients([])
+      setOtherWeightHistory({})
       setOtherFetchError(null)
+      setOtherLoading(false) // このブロックでは新たな取得を開始しないため、ここで確実に解除する
       return
     }
     if (selectedStoreId === null) {
       const others = stores.filter((s) => s.id !== profile?.store_id).map((s) => s.id)
-      if (others.length === 0) { setOtherClients([]); setOtherFetchError(null); return }
+      if (others.length === 0) {
+        otherFetchGenRef.current++
+        setOtherClients([])
+        setOtherWeightHistory({})
+        setOtherFetchError(null)
+        setOtherLoading(false) // 同上：取得を開始しないためここで確実に解除する
+        return
+      }
       fetchOtherScopeData(others)
     } else {
       fetchOtherScopeData([selectedStoreId])
@@ -358,6 +379,27 @@ export default function ClientListPage() {
         profile.store_id !== c.store_id && !isSuperAdmin
       )
     } catch { return false }
+  }
+
+  // 自店舗・他店舗のどちらの顧客でも、体重履歴・今日の記録を同じ形で取り出す。
+  // 自店舗の場合は既存の weightHistory/todayLogs/todayMeals（挙動は変更しない）、
+  // 他店舗の場合は otherWeightHistory（buildOtherStoreWeightInfoの結果）から組み立てる。
+  function resolveWeightInfo(c) {
+    if (isFromOtherStore(c)) {
+      const info = otherWeightHistory[c.id]
+      return {
+        hist:      info ? { firstKg: info.firstKg, latestKg: info.latestKg, lastDate: info.lastDate, latestLog: info.latestLog } : null,
+        hasToday:  Boolean(info?.todayLog),
+        todayLog:  info?.todayLog ?? null,
+        todayMeal: info?.todayMeal ?? null,
+      }
+    }
+    return {
+      hist:      weightHistory[c.id] ?? null,
+      hasToday:  Boolean(todayLogs[c.id]),
+      todayLog:  todayLogs[c.id] ?? null,
+      todayMeal: todayMeals[c.id] ?? null,
+    }
   }
 
   // 表示対象：自店舗（またはsuper_adminの全件）＋ 選択中の他店舗（RPC取得分）
@@ -447,8 +489,10 @@ export default function ClientListPage() {
     const bActive = b.is_active !== false
     if (aActive !== bActive) return aActive ? -1 : 1
     if (!aActive) return (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja')
-    const aDays = entryDays(a.id, todayLogs, weightHistory)
-    const bDays = entryDays(b.id, todayLogs, weightHistory)
+    const infoA = resolveWeightInfo(a)
+    const infoB = resolveWeightInfo(b)
+    const aDays = entryDaysFromInfo(infoA.hasToday, infoA.hist)
+    const bDays = entryDaysFromInfo(infoB.hasToday, infoB.hist)
     if (aDays !== bDays) return bDays - aDays // 日数多い順
     if (aDays === -1) { // 両方today入力済み → スコア低い順
       const sa = evaluateLog(todayLogs[a.id], null, todayMeals[a.id]).score
@@ -458,10 +502,11 @@ export default function ClientListPage() {
     return 0
   })
 
-  // 今日の入力状況サマリー：実データ（weight_logs）を取得している顧客のみで集計する。
-  // 他店舗（RPC取得・匿名化済み）は weight_logs を取得していないため対象外。
-  const dataAvailableClients = filteredClients.filter((c) => !isFromOtherStore(c))
-  const inputtedCount = dataAvailableClients.filter((c) => todayLogs[c.id]).length
+  // 今日の入力状況サマリー：現在表示中（＝取得に成功した）顧客全員で集計する。
+  // 取得に失敗した店舗の顧客はそもそも otherClients に含まれないため、
+  // filteredClients に含まれる時点で正常取得済みであることが保証される。
+  const dataAvailableClients = filteredClients
+  const inputtedCount = dataAvailableClients.filter((c) => resolveWeightInfo(c).hasToday).length
   const notInputted   = dataAvailableClients.length - inputtedCount
 
   return (
@@ -637,7 +682,7 @@ export default function ClientListPage() {
               )
             })()}
 
-            {/* サマリーバー（実データを取得している顧客のみで集計） */}
+            {/* サマリーバー（現在表示中＝取得に成功した顧客全員で集計） */}
             {dataAvailableClients.length > 0 && (
               <div className="flex items-center gap-3 mb-4 px-1 flex-wrap">
                 <p className="text-sm text-gray-500">
@@ -677,17 +722,19 @@ export default function ClientListPage() {
                   {(() => {
                     let otherAnonCounter = 0
                     return sorted.map((c, idx) => {
-                      const wLog       = todayLogs[c.id]     ?? null
-                      const mLog       = todayMeals[c.id]    ?? null
-                      const hist       = weightHistory[c.id] ?? null
-                      const commCnt    = commentCounts[c.id] ?? 0
                       const otherStore = isFromOtherStore(c)
+                      const weightInfo = resolveWeightInfo(c)
+                      const wLog       = weightInfo.todayLog
+                      const mLog       = weightInfo.todayMeal
+                      const hist       = weightInfo.hist
+                      const commCnt    = commentCounts[c.id] ?? 0
                       const isInactive = c.is_active === false
                       const anonIndex  = otherStore ? ++otherAnonCounter : null
                       const clientStore = stores.find(s => s.id === c.store_id)
 
-                      // 他店舗閲覧時は氏名・顧客番号・UUIDを一切表示せず、一覧順の連番のみ（表示専用・DB保存なし）
-                      const numberLabel = otherStore ? null : (c.customer_number || null)
+                      // 他店舗閲覧時も氏名・かな・UUIDは表示しない（一覧順の連番のみ、表示専用・DB保存なし）。
+                      // 顧客番号はこのPhaseから他店舗一覧でも表示を許可する。
+                      const numberLabel = c.customer_number || null
                       const nameLabel   = otherStore
                         ? anonClientLabel(anonIndex)
                         : nameHidden ? '氏名非表示' : c.name
@@ -695,7 +742,7 @@ export default function ClientListPage() {
                         ? (clientStore ? clientStore.name : c.store_name || '他店舗')
                         : nameHidden ? null : c.kana
 
-                      // 最新スコア：他店舗はweight_logsを取得していないため常に非表示（statusBadgesで制御）
+                      // 最新スコア：自店舗・他店舗ともresolveWeightInfoで解決した値から同じ計算をする
                       const scoreLog   = wLog ?? hist?.latestLog ?? null
                       const scoreMeal  = wLog ? mLog : null
                       const scoreEval  = scoreLog ? evaluateLog(scoreLog, null, scoreMeal) : null
@@ -717,11 +764,12 @@ export default function ClientListPage() {
                           : <>-{toGoal}kg</>
                       )
 
-                      // 入力状況・スコアバッジ：他店舗はweight_logsを取得していないため表示しない
-                      // （データ欠落時にEntryBadgeが誤って「未入力」を出してしまうのを防ぐ）
-                      const statusBadges = !otherStore ? (
+                      // 入力状況・スコアバッジ：自店舗・他店舗とも同じ部品・判定で表示する
+                      // （他店舗はweightInfoがresolveWeightInfo経由で解決済みのため、EntryBadgeが
+                      //   誤って「未入力」を出すことはない）
+                      const statusBadges = (
                         <>
-                          <EntryBadge clientId={c.id} todayLogs={todayLogs} weightHistory={weightHistory} />
+                          <EntryBadge hasToday={weightInfo.hasToday} hist={hist} />
                           {scoreVal !== null && (
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${scoreClr.bg} ${scoreClr.text} ${scoreClr.border}`}>
                               <span className="text-[14px]">{scoreVal}</span>点 {scoreLbl}
@@ -731,7 +779,7 @@ export default function ClientListPage() {
                             <span className="text-[10px] text-gray-400 whitespace-nowrap">{scoreDateLabel}</span>
                           )}
                         </>
-                      ) : null
+                      )
                       const subBadges = (
                         <>
                           {isInactive && (
