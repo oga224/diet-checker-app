@@ -495,8 +495,11 @@ export default function ClientListPage() {
     const bDays = entryDaysFromInfo(infoB.hasToday, infoB.hist)
     if (aDays !== bDays) return bDays - aDays // 日数多い順
     if (aDays === -1) { // 両方today入力済み → スコア低い順
-      const sa = evaluateLog(todayLogs[a.id], null, todayMeals[a.id]).score
-      const sb = evaluateLog(todayLogs[b.id], null, todayMeals[b.id]).score
+      // 自店舗・他店舗どちらでも安全なよう、resolveWeightInfo で解決済みの
+      // todayLog/todayMeal を使う（生の todayLogs/todayMeals は自店舗専用のmapで、
+      // 他店舗の client_id では常に undefined になり evaluateLog がクラッシュするため使わない）。
+      const sa = evaluateLog(infoA.todayLog, null, infoA.todayMeal).score
+      const sb = evaluateLog(infoB.todayLog, null, infoB.todayMeal).score
       return sa - sb
     }
     return 0
