@@ -27,16 +27,29 @@ begin;
 -- ------------------------------------------------------------
 -- 1. admin_get_other_store_client
 --    他店舗の顧客1件の匿名化された基本情報（詳細画面用）
+--    Phase 5B（詳細画面の匿名仮名廃止）で、一覧画面と同じ
+--    customer_number を返すよう拡張する（新たな個人情報の追加ではなく、
+--    既に admin_list_other_store_clients が返している情報と同一）。
+--
+--    PostgreSQLは RETURNS TABLE の列構成が変わる関数を
+--    CREATE OR REPLACE だけでは変更できない（エラー：cannot change
+--    return type of existing function）ため、admin_list_other_store_clients
+--    と同様にこの関数だけ事前に DROP してから作成する
+--    （他の2関数 admin_get_other_store_weight_logs /
+--     admin_get_other_store_meal_logs はDROPしない）。
 -- ------------------------------------------------------------
-create or replace function public.admin_get_other_store_client(p_client_id uuid)
+drop function if exists public.admin_get_other_store_client(uuid);
+
+create function public.admin_get_other_store_client(p_client_id uuid)
 returns table (
-  client_id   uuid,
-  store_id    uuid,
-  store_name  text,
-  age         integer,
-  height_cm   numeric,
-  goal_weight numeric,
-  is_active   boolean
+  client_id       uuid,
+  store_id        uuid,
+  store_name      text,
+  customer_number text,
+  age             integer,
+  height_cm       numeric,
+  goal_weight     numeric,
+  is_active       boolean
 )
 language plpgsql
 security definer
@@ -90,6 +103,7 @@ begin
     c.id,
     c.store_id,
     s.name,
+    c.customer_number,
     case when c.birthdate is null then null
          else date_part('year', age(current_date, c.birthdate))::integer
     end,

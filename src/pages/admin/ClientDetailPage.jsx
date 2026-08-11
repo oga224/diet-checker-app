@@ -21,7 +21,7 @@ import AdminRecordEditModal      from '../../components/admin/AdminRecordEditMod
 import DailyMealPhotos           from '../../components/admin/DailyMealPhotos'
 import { birthdateToPassword }   from '../../lib/patientAuth'
 import {
-  fetchOtherStoreClient, fetchOtherStoreWeightLogs, fetchOtherStoreMealLogs, anonClientLabel,
+  fetchOtherStoreClient, fetchOtherStoreWeightLogs, fetchOtherStoreMealLogs,
 } from '../../lib/otherStoreApi'
 
 const LOGIN_URL = typeof window !== 'undefined' ? `${window.location.origin}/login` : ''
@@ -94,9 +94,10 @@ export default function ClientDetailPage() {
   // 表示箇所は必ずこの1つの値だけで判定する。
   const shouldHidePersonalInfo = isRestricted || nameHidden
 
-  // 一覧からの遷移時に渡される、他店舗顧客の画面内連番（DBには保存しない・表示専用）
-  const anonIndexFromState = location.state?.anonIndex ?? null
-  const otherStoreAnonLabel = anonClientLabel(anonIndexFromState)
+  // 他店舗顧客の識別表示：RPC（admin_get_other_store_client）が返すcustomer_numberを
+  // 唯一の正規データ源とする（location.stateには依存しない。一覧クリック・reload・
+  // URL直接アクセスのいずれでも同じ値になる）。無い場合は実名・仮名へフォールバックせず「—」。
+  const otherStoreCode = client?.customer_number || '—'
 
   // today's/logs/meal のセット処理（直接取得・RPC取得のどちらからでも共通で使う）
   function applyClientData(clientRow, weightRows, mealRows) {
@@ -392,7 +393,7 @@ export default function ClientDetailPage() {
   )
 
   // ── 顧客番号（DB の customer_number を使用、未設定時は短縮ID）──
-  // ※他店舗閲覧（isOtherStore）ではこの値を一切表示しない（otherStoreAnonLabel を使う）
+  // ※他店舗閲覧（isOtherStore）ではこの値を一切表示しない（otherStoreCode を使う）
   const clientCode = client?.customer_number || `ID-${id.slice(0, 6).toUpperCase()}`
 
   // ── 集計値 ─────────────────────────────────────────────────
@@ -579,7 +580,7 @@ export default function ClientDetailPage() {
                 <p className="text-xs font-medium text-orange-600">
                   他店舗顧客{client?.store_name ? `（${client.store_name}）` : ''}
                 </p>
-                <h1 className="text-[21px] font-bold text-gray-800">{otherStoreAnonLabel}</h1>
+                <h1 className="text-[21px] font-bold text-gray-800">{otherStoreCode}</h1>
               </>
             ) : shouldHidePersonalInfo ? (
               <>
@@ -694,9 +695,9 @@ export default function ClientDetailPage() {
           {/* 氏名・年齢・身長・目標体重 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <p className="text-[15px] text-gray-400">{isOtherStore ? '表示名' : shouldHidePersonalInfo ? '顧客番号' : '氏名'}</p>
+              <p className="text-[15px] text-gray-400">{isOtherStore ? '顧客番号' : shouldHidePersonalInfo ? '顧客番号' : '氏名'}</p>
               {isOtherStore
-                ? <p className="text-[19px] font-semibold text-gray-900">{otherStoreAnonLabel}</p>
+                ? <p className="text-[19px] font-semibold text-gray-900">{otherStoreCode}</p>
                 : shouldHidePersonalInfo
                   ? <p className="text-[19px] font-semibold text-gray-900">{clientCode}</p>
                   : <>

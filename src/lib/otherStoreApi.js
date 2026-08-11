@@ -79,12 +79,3 @@ export async function fetchOtherStoreMealLogs(clientId) {
   )
   return { data: (data ?? []).map(normalizeLogDate), error }
 }
-
-/**
- * 他店舗顧客の画面表示用ラベル。
- * 一覧の並び順を基にした表示専用の連番（DBには保存しない）。
- * 連番が分からない場合（詳細リロード等）は番号なしの「匿名顧客」を返す。
- */
-export function anonClientLabel(index) {
-  return index ? `匿名顧客 ${index}` : '匿名顧客'
-}

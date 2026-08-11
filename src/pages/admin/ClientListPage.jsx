@@ -13,7 +13,7 @@ import {
 import { readNameHidden, writeNameHidden } from '../../lib/nameVisibility'
 import { fetchAllPages } from '../../lib/fetchAllPages'
 import { computeWeightSummary, findLatestLog } from '../../lib/weightSummary'
-import { fetchOtherStoreClients, anonClientLabel, buildOtherStoreWeightInfo } from '../../lib/otherStoreApi'
+import { fetchOtherStoreClients, buildOtherStoreWeightInfo } from '../../lib/otherStoreApi'
 
 const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -723,7 +723,6 @@ export default function ClientListPage() {
                   </div>
 
                   {(() => {
-                    let otherAnonCounter = 0
                     return sorted.map((c, idx) => {
                       const otherStore = isFromOtherStore(c)
                       const weightInfo = resolveWeightInfo(c)
@@ -732,14 +731,14 @@ export default function ClientListPage() {
                       const hist       = weightInfo.hist
                       const commCnt    = commentCounts[c.id] ?? 0
                       const isInactive = c.is_active === false
-                      const anonIndex  = otherStore ? ++otherAnonCounter : null
                       const clientStore = stores.find(s => s.id === c.store_id)
 
-                      // 他店舗閲覧時も氏名・かな・UUIDは表示しない（一覧順の連番のみ、表示専用・DB保存なし）。
-                      // 顧客番号はこのPhaseから他店舗一覧でも表示を許可する。
-                      const numberLabel = c.customer_number || null
+                      // 他店舗閲覧時も氏名・かな・UUIDは表示しない。仮名（匿名顧客N）も一覧では表示せず、
+                      // 顧客番号のみを識別情報として表示する（顧客番号が無い場合は欠損表示「—」にする。
+                      // 実名・仮名へのフォールバックはしない）。
+                      const numberLabel = c.customer_number || (otherStore ? '—' : null)
                       const nameLabel   = otherStore
-                        ? anonClientLabel(anonIndex)
+                        ? null
                         : nameHidden ? '氏名非表示' : c.name
                       const displaySub  = otherStore
                         ? (clientStore ? clientStore.name : c.store_name || '他店舗')
@@ -802,7 +801,7 @@ export default function ClientListPage() {
                         <Link
                           key={c.id}
                           to={`/admin/clients/${c.id}`}
-                          state={{ fromList: true, isOtherStore: otherStore, anonIndex: otherStore ? anonIndex : undefined }}
+                          state={{ fromList: true, isOtherStore: otherStore }}
                           onClick={handleRowClick}
                           className={`group block border-b border-gray-100 last:border-b-0 transition-colors hover:bg-blue-50/70 ${idx % 2 === 1 ? 'bg-gray-50/60' : 'bg-white'} ${isInactive ? 'opacity-60' : ''}`}
                         >
