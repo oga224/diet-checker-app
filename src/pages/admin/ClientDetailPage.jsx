@@ -603,14 +603,19 @@ export default function ClientDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* 氏名の表示・非表示切替（一覧画面と共通のsessionStorageで連動） */}
-          <button onClick={toggleNameHidden}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors inline-flex items-center gap-1.5
-              ${nameHidden
-                ? 'bg-slate-700 text-white border-slate-700 hover:bg-slate-800'
-                : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}>
-            {nameHidden ? '👁️ 氏名を表示' : '🙈 氏名を非表示'}
-          </button>
+          {/* 氏名の表示・非表示切替（一覧画面と共通のsessionStorageで連動）。
+              isRestricted（他店舗閲覧・本部の匿名モード）では氏名は常に非表示のため、
+              このトグルは効果を持たない。ボタン表示だけが実際の状態と矛盾しないよう、
+              その間は表示しない。 */}
+          {!isRestricted && (
+            <button onClick={toggleNameHidden}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors inline-flex items-center gap-1.5
+                ${nameHidden
+                  ? 'bg-slate-700 text-white border-slate-700 hover:bg-slate-800'
+                  : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}>
+              {nameHidden ? '👁️ 氏名を表示' : '🙈 氏名を非表示'}
+            </button>
+          )}
           {/* 自店舗のみ記録追加・編集を許可 */}
           {!isRestricted && (
             <>
