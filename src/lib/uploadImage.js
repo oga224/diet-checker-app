@@ -65,7 +65,17 @@ export async function uploadImage(file, bucket, path) {
   const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path)
   console.log('[uploadImage] ③ getPublicUrl:', urlData)
 
-  return urlData.publicUrl
+  // Storageパス（path）は client_id/日付/種別.jpg のように差し替えても
+  // 変わらない決定的な値であり、upsert:true で中身を上書きしても
+  // getPublicUrl() が返すURL文字列自体は変化しない。そのため写真を
+  // 差し替えてもブラウザ・CDNが同一URLに対する古いキャッシュ画像を
+  // 返し続け、新しい画像が表示されない問題があった。
+  // アップロード成功時に1回だけ一意な値を採番してクエリパラメータへ
+  // 付与し、保存されるURL文字列そのものを変化させることでキャッシュを
+  // 回避する。Storage上の実パス・upsert:trueの挙動には影響しない。
+  const cacheBustedUrl = new URL(urlData.publicUrl)
+  cacheBustedUrl.searchParams.set('v', String(Date.now()))
+  return cacheBustedUrl.toString()
 }
 
 /**
@@ -78,11 +88,15 @@ export async function deleteImage(bucket, path) {
 
 /**
  * 公開URLからStorageのパスを取得する。
- * 例: https://xxx.supabase.co/storage/v1/object/public/meal-photos/abc/file.jpg
+ * 例: https://xxx.supabase.co/storage/v1/object/public/meal-photos/abc/file.jpg?v=123
  *  → 'abc/file.jpg'
+ * uploadImage() が付与するキャッシュ回避用の ?v=... はStorage上の実パスの
+ * 一部ではないため、クエリ文字列・フラグメントは取り除いてから返す
+ * （?v= の付いていない既存URLもそのまま動作する）。
  */
 export function urlToPath(publicUrl, bucket) {
   const marker = `/object/public/${bucket}/`
   const idx = publicUrl.indexOf(marker)
-  return idx >= 0 ? publicUrl.slice(idx + marker.length) : null
+  if (idx < 0) return null
+  return publicUrl.slice(idx + marker.length).split(/[?#]/)[0]
 }
